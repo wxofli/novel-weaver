@@ -42,4 +42,3 @@ exclude = ["**/__pycache__/**", "**/*.pyc", "**/.env*", "**/.novel/**", "**/*.sq
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_default_fixture_loop_scope = "function"
-

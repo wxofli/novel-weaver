@@ -203,4 +203,3 @@ ACTION_MODELS = {
     "index_update": IndexUpdate, "index_rebuild": IndexUpdate,
     "doctor_check": ReadRequest, "doctor_repair": WriteRequest,
 }
-

@@ -451,4 +451,3 @@ def test_mcp_stdio_lists_tools_through_official_client():
 
     listed = asyncio.run(list_tools())
     assert {tool.name for tool in listed.tools} == set(ACTION_MODELS)
-

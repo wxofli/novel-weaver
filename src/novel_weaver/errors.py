@@ -10,4 +10,3 @@ class NovelError(Exception):
 def require(condition, code: str, message: str, exit_code: int = 3):
     if not condition:
         raise NovelError(code, message, exit_code)
-

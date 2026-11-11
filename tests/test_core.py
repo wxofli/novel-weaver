@@ -188,10 +188,8 @@ def test_run_scoped_pending_and_budget(book):
     assert state["pending_work"][0]["run_id"] == "session:turn"
     stage_review(book, src, "正文。")
     assert call("book_status", book)["status"] == "awaiting_author"
-    setting = ok(call("source_save", book, kind="setting", logical_id="setting:rules", content="规矩" * 2000))
-    stage = ok(call("memory_stage", book, source_version=setting["source_version"], base_revision=0, delta=delta("规矩" * 2000)))
-    ok(call("source_accept", book, source_version=setting["source_version"], batch_id=stage["batch_id"], expected_revision=0))
-    assert call("context_build", book, chapter=1, budget_chars=500)["error"]["code"] == "BUDGET_EXCEEDED"
+    brief = {"constraints": ["规矩" * 500]}
+    assert call("context_build", book, chapter=1, budget_chars=500, scene_brief=brief)["error"]["code"] == "BUDGET_EXCEEDED"
 
 
 def test_doctor_restores_pending_projection_without_overwriting_external_edit(book, monkeypatch):

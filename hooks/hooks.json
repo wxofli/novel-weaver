@@ -29,34 +29,6 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "^(mcp__[^ ]*novel[_-]weaver__(source_save|source_accept|memory_stage|memory_sync|context_build|book_import|index_update|index_rebuild|doctor_repair)|apply_patch|Write|Edit|MultiEdit)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/scripts/hook_runner.py\" PreToolUse",
-            "commandWindows": "python \"${PLUGIN_ROOT}/scripts/hook_runner.py\" PreToolUse",
-            "timeout": 10,
-            "additionalContextLimit": 1000
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "^(mcp__[^ ]*novel[_-]weaver__(source_save|source_accept|memory_stage|memory_sync|context_build|book_import|index_update|index_rebuild|doctor_repair)|apply_patch|Write|Edit|MultiEdit)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/scripts/hook_runner.py\" PostToolUse",
-            "commandWindows": "python \"${PLUGIN_ROOT}/scripts/hook_runner.py\" PostToolUse",
-            "timeout": 10,
-            "additionalContextLimit": 1000
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
@@ -65,31 +37,6 @@
             "command": "python3 \"${PLUGIN_ROOT}/scripts/hook_runner.py\" Stop",
             "commandWindows": "python \"${PLUGIN_ROOT}/scripts/hook_runner.py\" Stop",
             "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "^(manual|auto)$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/scripts/hook_runner.py\" PreCompact",
-            "commandWindows": "python \"${PLUGIN_ROOT}/scripts/hook_runner.py\" PreCompact",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Interrupt": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/scripts/hook_runner.py\" Interrupt",
-            "commandWindows": "python \"${PLUGIN_ROOT}/scripts/hook_runner.py\" Interrupt",
-            "timeout": 3
           }
         ]
       }

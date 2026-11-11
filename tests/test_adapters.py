@@ -168,7 +168,9 @@ def hooks(monkeypatch):
     from novel_weaver import hooks
 
     calls = []
-    status = envelope({"title": "星河", "latest_chapter": 4, "memory_frontier": 3, "pending_work": [{"source_version": "v4", "run_id": "session:turn", "needs": ["memory.stage", "review", "accept"]}], "awaiting_author": False, "changed_projections": []}, next_actions=[{"action": "memory_stage", "source_version": "v4"}])
+    status = envelope({"title": "星河", "latest_chapter": 4, "memory_frontier": 3,
+                       "pending_work": [{"source_version": "v4", "run_id": "session:turn", "needs": ["memory.stage", "review"]}],
+                       "awaiting_author": False, "changed_projections": []})
 
     def execute(action, payload):
         calls.append((action, payload))
@@ -186,17 +188,16 @@ def additional_context(result):
     return result.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
-@pytest.mark.parametrize("event_name", ["SessionStart", "UserPromptSubmit"])
-def test_hook_state_card_is_book_scoped_bounded_and_carries_run(hooks, hook_book, event_name):
+def test_hook_session_and_prompt_send_distinct_brief_context(hooks, hook_book):
     module, status, calls = hooks
     root, child, book_id = hook_book
     status["data"]["title"] = "星" * 2000
-    result = module.handle_event(event_name, event(child))
-    context = additional_context(result)
-    assert result["hookSpecificOutput"]["hookEventName"] == event_name
-    assert len(context) <= 1500
-    assert "session:turn" in context
-    assert calls == [("book_status", {"project": str(root), "book_id": book_id})]
+    session = additional_context(module.handle_event("SessionStart", event(child)))
+    prompt = additional_context(module.handle_event("UserPromptSubmit", event(child)))
+    assert "accepted_chapter=4" in session and "session:turn" not in session
+    assert "session:turn" in prompt and "accepted_chapter" not in prompt
+    assert len(session) < 600 and len(prompt) < 180
+    assert calls == [("book_status", {"project": str(root), "book_id": book_id, "brief": True})] * 2
 
 
 def test_hook_uses_closest_book_marker(hooks, hook_book):
@@ -210,22 +211,29 @@ def test_hook_uses_closest_book_marker(hooks, hook_book):
     assert calls[-1][1]["project"] == str(nested)
 
 
-def test_hook_post_tool_reports_next_actions_and_changed_projections(hooks, hook_book):
-    module, status, _ = hooks
-    _, child, _ = hook_book
-    status["data"]["changed_projections"] = ["sources/chapter-4.md"]
-    context = additional_context(module.handle_event("PostToolUse", event(child)))
-    assert "memory_stage" in context
-    assert "chapter-4.md" in context
+def test_hook_post_tool_ignores_failed_calls_and_uses_the_explicit_book_for_partial_results(hooks, hook_book):
+    module, _, calls = hooks
+    root, child, _ = hook_book
+    other = {"project": str(root.parent / "other"), "book_id": "other-book"}
+    base = event(child, tool_name="mcp__novel_weaver__source_accept", tool_input={"request": other})
+    assert module.handle_event("PostToolUse", dict(base, tool_response={"isError": True})) == {}
+    assert calls == []
+    partial = {"structuredContent": {"status": "partial", "book_id": other["book_id"]}}
+    result = module.handle_event("PostToolUse", dict(base, tool_response=partial))
+    assert "partial completion" in additional_context(result)
+    assert calls == [("book_status", dict(other, brief=True))]
 
 
-def test_hook_projection_records_are_reported_by_path(hooks, hook_book):
+def test_hook_reports_only_the_edited_tracked_projection(hooks, hook_book):
     module, status, _ = hooks
-    _, child, _ = hook_book
-    status["data"]["changed_projections"] = [{"path": "正文/第0004章.md", "source_version": "v4", "actual_hash": "h"}]
-    context = additional_context(module.handle_event("PostToolUse", event(child)))
+    root, child, _ = hook_book
+    path = "正文/第0004章.md"
+    status["data"]["changed_projections"] = [{"path": path, "source_version": "v4", "actual_hash": "h"},
+                                               {"path": "正文/第0003章.md"}]
+    edited = event(child, tool_name="apply_patch", tool_input={"command": f"*** Update File: {root / path}"})
+    context = additional_context(module.handle_event("PostToolUse", edited))
     assert "正文/第0004章.md" in context
-    assert "actual_hash" not in context
+    assert "第0003章.md" not in context and "actual_hash" not in context
 
 
 def test_hook_stop_blocks_once_only_for_current_run(hooks, hook_book):
@@ -251,17 +259,19 @@ def test_hook_stop_never_forces_unrelated_or_readonly_turns(hooks, hook_book, ex
     assert module.handle_event("Stop", event(child, stop_hook_active=False, **extra)) == {}
 
 
-def test_hook_stop_does_not_loop_when_awaiting_author(hooks, hook_book):
+@pytest.mark.parametrize("state", [{"awaiting_author": True}, {"active_job": {"job_id": "sync-existing"}}])
+def test_hook_stop_leaves_author_decisions_and_sync_jobs_to_the_workflow(hooks, hook_book, state):
     module, status, _ = hooks
     _, child, _ = hook_book
-    status["data"]["awaiting_author"] = True
+    status["data"].update(state)
     assert module.handle_event("Stop", event(child, stop_hook_active=False)) == {}
 
 
-def test_hook_stop_does_not_continue_pending_author_work(hooks, hook_book):
+@pytest.mark.parametrize("needs", [["review", "awaiting_author"], ["memory.stage", "context.build"], ["review", "accept"]])
+def test_hook_stop_does_not_continue_author_work_or_stale_drafts(hooks, hook_book, needs):
     module, status, _ = hooks
     _, child, _ = hook_book
-    status["data"]["pending_work"][0]["needs"] = ["review", "awaiting_author"]
+    status["data"]["pending_work"][0]["needs"] = needs
     assert module.handle_event("Stop", event(child, stop_hook_active=False)) == {}
 
 
@@ -280,13 +290,11 @@ def test_hook_nonbook_is_noop_and_never_calls_core(hooks, tmp_path):
     assert calls == []
 
 
-def test_hook_pretool_reminds_without_denial(hooks, hook_book):
-    module, _, _ = hooks
+def test_legacy_pretool_event_does_not_requery_state(hooks, hook_book):
+    module, _, calls = hooks
     _, child, _ = hook_book
     result = module.handle_event("PreToolUse", event(child, tool_name="Bash", tool_input={"command": "novelctl source save --input request.json"}))
-    assert additional_context(result)
-    assert "permissionDecision" not in result.get("hookSpecificOutput", {})
-    assert module.handle_event("PreToolUse", event(child, tool_name="unknown_tool")) == {}
+    assert result == {} and calls == []
 
 
 def test_hook_core_failure_returns_context_without_raising(hooks, hook_book, monkeypatch):
@@ -379,7 +387,7 @@ def test_mcp_typed_handlers_call_same_core_without_captured_parameters(monkeypat
     asyncio.run(server.call_tool("book_status", {"request": {"project": "p", "book_id": "b"}}))
     assert [action for action, _ in calls] == ["search", "book_status"]
     assert calls[0][1]["query"] == "线索"
-    assert calls[1][1] == {"project": "p", "book_id": "b"}
+    assert calls[1][1] == {"project": "p", "book_id": "b", "brief": False}
 
 
 def test_mcp_rejects_unknown_request_fields_before_core(monkeypatch):

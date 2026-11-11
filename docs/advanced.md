@@ -121,7 +121,7 @@ fact 必须恰有 `object`（另一个实体 ID）或 `value` 其中之一。`of
 
 `setting`/`decision` 使用该源全文的**完整声明快照**，不是章节增量或全书图快照。所有事实端点与知情角色引用的实体都必须在同一 delta 的 `entities` 中声明（`reader` 除外），即使实体已经存在；`knowledge.fact` 只能引用同一 delta 的 `facts`；`close_facts` 必须为空。其源章为 0，`valid_from` 省略或取 0。撤销旧断言须以原 `logical_id` 保存完整替代源、提取新快照再采纳，不能用另一个决定源关闭旧断言。
 
-检索由本地中文分词、SQLite FTS5/BM25、证据图与可选语义向量组成，候选可通过配置的 reranker 重排。图查询提供实体、1–2 跳邻接/路径与时间线，不把整张图塞进上下文。上下文按任务检索和字符预算组装，保护作者约束、有关事实、角色知情、未解决伏笔、近期摘要与上一章尾部；写第 N 章以 N−1 为历史界限。
+检索由本地中文分词、SQLite FTS5/BM25、证据图与可选语义向量组成。写第 N 章以 N−1 为历史界限。`scene_brief` 可传入本场目标、故事时间、作者约束和揭晓限制；可选的设定摘录、正文片段和风格样例按字符预算加入。显式指定 `pov` 的写作和修订使用该视角的知情记录，审查使用作者视图按需核实原文。模型还会看到聊天和主动读取的内容，有限视角工作流也应按相同的揭晓范围选取原文。
 
 `graph_query.pov` 和 `context_build.pov` 必须传同书稳定实体 ID 或 `reader`，不通过角色名/别名解析，避免身份映射提前泄漏。不带 POV 的历史名字/别名查询只使用指定章已引入的字典。
 
@@ -131,7 +131,7 @@ fact 必须恰有 `object`（另一个实体 ID）或 `value` 其中之一。`of
 - `plan`：大纲、灵感、设定、风格与决定等材料。未来计划不是已发生事实，作者秘密也不是人物已知信息。
 - `reference`：研究资料。外部事实不会直接进入剧情记忆。
 
-需要修订或审查候选稿时，只有精确 `draft_id=source_version` 才启用该章的工作覆盖层。它不会自动吸收其他候选稿，也不会改变已采纳正史。覆盖范围未到目标章会明确返回 `MEMORY_NOT_READY`。
+修订或审查候选稿时，精确 `draft_id=source_version` 返回该稿的版本引用，正文由 `source_get` 分页读取。覆盖范围未到目标章时返回 `MEMORY_NOT_READY`。
 
 ## 导入、前文修订与设定替换
 
@@ -209,9 +209,9 @@ uv sync --locked --extra vector --extra dev
 
 ## Hooks
 
-提供 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`Stop`、`PreCompact`、`Interrupt`。处理器只读取最近的书 marker 和状态，不调用模型、不联网、不采纳正文。工具 hooks 仅匹配本插件的相关 MCP 操作和文件编辑工具，不匹配普通查询/状态工具，避免状态提示触发自身；通过普通 CLI 产生的变化在下次状态检查、prompt 或 Stop 被发现。
+默认提供 `SessionStart`、`UserPromptSubmit` 和 `Stop`。它们读取最近作品的简要状态，跳过 Markdown 和索引扫描。`SessionStart` 给出作品身份和进度，压缩后也可恢复这些信息。`UserPromptSubmit` 提供本轮 ID、待作者采纳的版本或计划模式提示。
 
-Session/Prompt 给出有长度上限的状态卡与真实 `next_actions`；Pre/Post 提示版本约束和外部投影改动。`Stop` 只有在明确 `stop_hook_active=false`、同一 `session_id:turn_id` 有未完成自动工作时才继续一次；不强迫其他轮次、计划模式、取消操作或 `awaiting_author` 继续。`PreCompact` 与 `Interrupt` 当前安全返回空对象，任务恢复依赖持久化状态，压缩后的 `SessionStart` 会重读。
+`Stop` 仅对本轮票据仍有效、只缺候选记忆或审查的草稿请求续跑一次。采纳由作者决定。导入、前文重放和中断恢复由对应 Skill 根据持久化任务处理。已自行配置 `PostToolUse` 的用户只会在本次修改了已跟踪的 Markdown 投影，或显式指定作品的 MCP 调用报告部分完成时收到提醒。
 
 清单通过 `scripts/hook_runner.py` 启动处理器。包装器只用标准库，将 stdin 原字节传入子进程，并把子进程 `PYTHONPATH` 固定为插件 `src/`；优先运行 `.venv/Scripts/python.exe` 或 `.venv/bin/python -m novel_weaver.cli hook run EVENT`，缺失才尝试 `uv run --locked --offline --no-sync`，不下载 Python、不安装依赖、不更改书数据。超时、非零退出（包括 uv 的退出 2）以及无效或非 hook JSON 都转换为 stdout `{}`、退出 0，并在 stderr 诊断；只有成功子进程的有效 hook 输出会转发。外层 Python 本身缺失时宿主会标记启动失败，尚未启动的处理器不会写数据。Hooks 是工作流提醒，不是完整的权限或工具覆盖边界。
 
@@ -241,7 +241,7 @@ uv run --locked --extra vector python scripts/benchmark.py
 uv run --locked python scripts/package.py
 ```
 
-产物为 `dist/novel-weaver-0.1.1.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
+产物为 `dist/novel-weaver-0.1.2.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
 
 已有本地依赖时，也可 `python scripts/launch.py --help` 调试源码；它仅加载 `src/` 与可选 `.deps/`，不执行 pip 或下载。正式 MCP 使用 `uv` 和 `uv.lock`，hooks 使用上述标准库安全包装器。
 

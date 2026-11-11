@@ -261,63 +261,146 @@ def graph(book, request):
     return {"path": [], "truncated": len(found) >= 100} if request.mode == "path" else {"facts": found[:100], "chapter": chapter, "truncated": len(found) >= 100}
 
 
-def build_context(book, request):
-    from .schemas import Search
-    chapter = request.chapter or book.latest_chapter() + 1
-    cutoff = chapter - 1 if request.task in ("write", "revise") else min(chapter, book.latest_chapter())
-    coverage(book, cutoff)
-    sources = [dict(r) for r in book.db.execute("SELECT s.* FROM accepted a JOIN sources s ON s.id=a.source_id")]
-    constraints = [{"source_version": s["id"], "kind": s["kind"], "text": s["content"]} for s in sources if s["kind"] in ("setting", "decision", "style")]
+def context_seeds(book, request, cutoff, query):
     seeds = {resolve_entity(book, e, chapter=cutoff) for e in request.entity_ids}
     if request.pov and request.pov != "reader":
         seeds.add(resolve_entity(book, request.pov, chapter=cutoff, require_id=True))
     for row in book.db.execute("SELECT * FROM entities"):
-        if any(n in request.query for n in [row["name"], *json.loads(row["aliases"])]) and request.query:
+        if query and any(n in query for n in [row["name"], *json.loads(row["aliases"])]):
             try:
                 historical = historical_entity(book, row["id"], cutoff)
             except NovelError as exc:
                 if exc.code == "ENTITY_NOT_YET_INTRODUCED":
                     continue
                 raise
-            if any(n in request.query for n in [historical["name"], *historical["aliases"]]):
+            if any(n in query for n in [historical["name"], *historical["aliases"]]):
                 seeds.add(row["id"])
+    return seeds
+
+
+def _fit_items(payload, target, items, budget):
+    complete = True
+    for item in items:
+        target.append(item)
+        if len(dumps(payload)) > budget:
+            target.pop()
+            complete = False
+    return complete
+
+
+def _draft_reference(book, source_version, chapter):
+    draft = book.source(source_version)
+    require(draft["kind"] == "chapter" and draft["chapter"] == chapter, "DRAFT_MISMATCH", "Working overlay belongs to another chapter", 4)
+    staged = book.db.execute("SELECT id,base_revision FROM batches WHERE source_id=? ORDER BY rowid DESC LIMIT 1", (draft["id"],)).fetchone()
+    return {"source_version": draft["id"], "source_hash": draft["hash"], "total_chars": len(draft["content"]),
+            "candidate_memory": {"batch_id": staged["id"], "base_revision": staged["base_revision"],
+                                 "source_hash": draft["hash"]} if staged else None}
+
+
+def _pov_fact(fact):
+    evidence = fact["knowledge_evidence"]
+    return {**{key: fact[key] for key in ("id", "subject", "predicate", "object", "value", "knowledge_state")},
+            "source_version": evidence["source_id"], "offset": evidence["offset"]}
+
+
+def _author_material(book, request, payload, seeds, query, open_hooks, warnings):
+    from .schemas import Search
+
+    cutoff = payload["as_of_chapter"]
+    budget = request.budget_chars
+    truncated = []
+
+    def fill(section, items, limit):
+        if not _fit_items(payload, payload[section], items[:limit], budget) or len(items) > limit:
+            truncated.append(section)
+
+    plan_hits, canon_hits = [], []
+    if query:
+        for scope, target in (("plan", plan_hits), ("canon", canon_hits)):
+            result, messages = search(book, Search(query=query, chapter=cutoff, scope=scope))
+            warnings.extend(messages)
+            target.extend(result["hits"])
+    kinds = {row["id"]: row["kind"] for row in book.db.execute("SELECT s.id,s.kind FROM accepted a JOIN sources s ON s.id=a.source_id WHERE s.kind!='chapter'")}
+    constraints = [{"source_version": hit["source_version"], "kind": kinds[hit["source_version"]],
+                    "offset": hit["offset"], "text": hit["quote"][:600]}
+                   for hit in plan_hits if kinds.get(hit["source_version"]) in {"setting", "decision"}]
+    if not constraints:
+        constraints = [dict(row) for row in book.db.execute("""SELECT s.id AS source_version,s.kind,0 AS offset,substr(s.content,1,600) AS text
+            FROM accepted a JOIN sources s ON s.id=a.source_id WHERE s.kind IN ('setting','decision')
+            ORDER BY s.created_at DESC,s.id LIMIT 5""")]
+    fill("author_constraints", constraints, 4)
     facts = fact_rows(book, cutoff, seeds=seeds)
-    knowledge = {}
-    relevant_ids = {f["id"] for f in facts}
-    for person in list(dict.fromkeys(([request.pov] if request.pov else []) + ["reader"])):
-        visible = fact_rows(book, cutoff, person, seeds=seeds)
-        knowledge[person] = {"known": visible,
-                             "not_established_as_known": sorted(relevant_ids - {f["id"] for f in visible})}
-    recent = [dict(r) for r in book.db.execute("SELECT * FROM summaries WHERE chapter<=? ORDER BY chapter DESC LIMIT 3", (cutoff,))]
-    previous = next((s for s in sources if s["chapter"] == cutoff and s["kind"] == "chapter"), None)
-    open_hooks = [h for h in historical_graph(book, cutoff) if h["status"] != "resolved"]
+    facts.sort(key=lambda fact: (-fact["introduced"], fact["id"]))
+    fill("facts", facts, 12)
+    visible_facts = {f["id"] for f in payload["facts"]}
+    for person in dict.fromkeys(([request.pov] if request.pov else []) + ["reader"]):
+        known = fact_rows(book, cutoff, person, seeds=seeds)
+        details = {"known": [], "not_established_as_known": []}
+        payload["knowledge"][person] = details
+        if len(dumps(payload)) > budget:
+            del payload["knowledge"][person]
+            truncated.append("knowledge")
+            continue
+        unknown_ids = sorted(visible_facts - {f["id"] for f in known})
+        fitted_known = _fit_items(payload, details["known"], [_pov_fact(f) for f in known[:8]], budget)
+        fitted_unknown = _fit_items(payload, details["not_established_as_known"], unknown_ids, budget)
+        if not fitted_known or not fitted_unknown or len(known) > 8:
+            truncated.append("knowledge")
+    previous = book.db.execute("""SELECT substr(s.content,-1000) FROM accepted a JOIN sources s ON s.id=a.source_id
+        WHERE s.kind='chapter' AND s.chapter=?""", (min(payload["chapter"] - 1, cutoff),)).fetchone()
+    if previous:
+        payload["previous_tail"] = previous[0]
+        if len(dumps(payload)) > budget:
+            payload["previous_tail"] = ""
+            truncated.append("previous_tail")
+    fill("passages", [hit for hit in canon_hits if hit["source_version"] != request.draft_id], 4)
+    fill("plan", [hit for hit in plan_hits if kinds.get(hit["source_version"]) not in {"setting", "decision", "style"}], 3)
+    fill("style_examples", [hit for hit in plan_hits if kinds.get(hit["source_version"]) == "style"], 2)
     open_hooks.sort(key=lambda h: (h.get("target_chapter") or 2147483647, h["id"]))
+    fill("hooks", open_hooks, 8)
+    payload["additional_open_hooks"] = len(open_hooks) - len(payload["hooks"])
+    recent = [dict(r) for r in book.db.execute("SELECT * FROM summaries WHERE chapter<=? ORDER BY chapter DESC LIMIT 3", (cutoff,))]
+    fill("recent_summaries", recent, 3)
+    return truncated
+
+
+def build_context(book, request):
+    writing = request.task in {"write", "revise"}
+    limited = writing and request.pov is not None
+    latest = book.latest_chapter()
+    chapter = request.chapter or latest + 1
+    cutoff = chapter - 1 if writing else min(chapter, latest)
+    coverage(book, cutoff)
+    brief = request.scene_brief.model_dump() if request.scene_brief else None
+    query = request.query or (request.scene_brief.goal if request.scene_brief else "")
+    open_hooks = [] if limited else [h for h in historical_graph(book, cutoff) if h["status"] != "resolved"]
     payload = {"task": request.task, "chapter": chapter, "as_of_chapter": cutoff, "query": request.query,
-               "author_constraints": constraints, "facts": facts, "knowledge": knowledge,
-               "hooks": open_hooks[:8], "additional_open_hooks": max(0, len(open_hooks) - 8),
-               "recent_summaries": recent, "previous_tail": previous["content"][-1500:] if previous else "",
-               "plan": [], "passages": [], "draft": None,
-               "instruction": "Plans and author-only secrets constrain drafting; do not reveal them as character or reader knowledge."}
+               "view": "pov" if limited else "author", "pov": request.pov, "scene_brief": brief,
+               "context_id": uid("ctx") if writing else None, "revision": book.revision, "budget_chars": request.budget_chars,
+               "author_constraints": [], "facts": [], "knowledge": {}, "hooks": [], "additional_open_hooks": len(open_hooks),
+               "recent_summaries": [], "previous_tail": "", "plan": [], "style_examples": [], "passages": [], "draft": None,
+               "instruction": "Follow the scene brief and reveal limit. Use only the selected viewpoint's knowledge." if limited else
+                              "Keep author truth, reader knowledge, character beliefs and planned events separate."}
     if request.draft_id:
-        draft = book.source(request.draft_id)
-        require(draft["kind"] == "chapter" and draft["chapter"] == chapter, "DRAFT_MISMATCH", "Working overlay belongs to another chapter", 4)
-        staged = book.db.execute("SELECT delta FROM batches WHERE source_id=? ORDER BY rowid DESC LIMIT 1", (draft["id"],)).fetchone()
-        payload["draft"] = {"source_version": draft["id"], "text": draft["content"], "candidate_memory": json.loads(staged[0]) if staged else None}
-    hard_size = len(dumps(payload))
-    require(hard_size <= request.budget_chars, "BUDGET_EXCEEDED", "Required constraints exceed context budget; narrow entities or increase budget")
+        payload["draft"] = _draft_reference(book, request.draft_id, chapter)
+    if limited:
+        payload["knowledge"][request.pov] = {"known": []}
+    require(len(dumps(payload)) <= request.budget_chars, "BUDGET_EXCEEDED", "Scene brief and required metadata exceed the context budget; shorten the brief or increase the budget")
+    seeds = context_seeds(book, request, cutoff, query)
     warnings = []
-    changed = book.projection_changes()
+    if limited:
+        known = [_pov_fact(f) for f in fact_rows(book, cutoff, request.pov, seeds=seeds)]
+        complete = _fit_items(payload, payload["knowledge"][request.pov]["known"], known[:16], request.budget_chars)
+        trimmed = ["knowledge"] if not complete or len(known) > 16 else []
+    else:
+        trimmed = _author_material(book, request, payload, seeds, query, open_hooks, warnings)
+    if trimmed:
+        warnings.append({"code": "CONTEXT_TRIMMED", "sections": sorted(set(trimmed)),
+                         "message": "Some optional material was omitted. Retrieve only what the current task needs."})
+    changed = book.projection_changes() if request.task in {"write", "revise", "review"} else []
     if changed:
-        warnings.append({"code": "SOURCE_FILES_CHANGED", "paths": [c["path"] for c in changed], "message": "Inspect external edits; this context uses the accepted immutable versions."})
-    for scope, field in (("plan", "plan"), ("canon", "passages")):
-        result, messages = search(book, Search(query=request.query, chapter=cutoff, scope=scope))
-        warnings.extend(messages)
-        for hit in result["hits"]:
-            payload[field].append(hit)
-            if len(dumps(payload)) > request.budget_chars:
-                payload[field].pop()
-                break
-    cid = uid("ctx")
-    book.db.execute("INSERT INTO contexts VALUES (?,?,?,?,?,?,?)", (
-        cid, book.revision, chapter, request.task, book.fingerprint(), request.run_id, dumps(payload)))
-    return dict(payload, context_id=cid, revision=book.revision, budget_chars=request.budget_chars), warnings
+        warnings.append({"code": "SOURCE_FILES_CHANGED", "paths": [c["path"] for c in changed[:6]], "message": "Inspect external edits; this context uses the accepted immutable versions."})
+    if writing:
+        book.db.execute("INSERT INTO contexts VALUES (?,?,?,?,?,?,?)", (
+            payload["context_id"], payload["revision"], chapter, request.task, book.fingerprint(), request.run_id, dumps(payload)))
+    return payload, warnings

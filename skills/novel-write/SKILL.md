@@ -7,13 +7,15 @@ description: 在 Novel Weaver 作品中写下一章、续写场景或修订现�
 
 读取[公共协议](../novel/references/workflow.md)的“调用与身份”“写章与采纳”“证据与记忆增量”。先锁定项目、章节、任务范围和作者的具体修改意图，不把要求续写一章扩成自动写整本书。按 `book_status` 处理已有活动同步任务，记忆未覆盖所需章节时先完成已授权同步。
 
+作者只想试一段或比较开场时，可以先在聊天里试写，待作者选定方向再保存正式候选稿。局部修订先读作者指定的原版本，保留范围外的原文和叙述声音。确认本场的变化、故事时间、叙述视角、必须保留的作者约束和允许揭晓的信息。
+
 ## 每个正文新版本的固定闭环
 
-1. 调用 `context_build(task="write" 或 "revise", chapter=N, query=本章目标, entity_ids=相关稳定ID, pov=需要时的同书稳定实体ID或reader)`，保留返回的 `context_id`。上下文与图查询的 POV 不接受名字/别名解析，避免身份提前泄漏。修改具体候选稿时，仅用它的精确 `draft_id=source_version` 开工作覆盖层。不得自动混入其他未采纳稿件。
-2. 在该上下文内写作。尊重作者约束、已确立事实、人物动机与知情边界。涉及新人物、规则、关系、时间状态或伏笔时，先用 `search`/`graph_query` 查重与核实；只有查无对应项后才引入一致的候选。检索不足时保留不确定性，不编造“数据库已有设定”。
+1. 调用 `context_build(task="write" 或 "revise", chapter=N, entity_ids=相关稳定ID)`，用 `scene_brief` 传入本场目标、故事时间、硬约束和揭晓限制。需要更精准的检索时补充 `query` 关键词。有限视角须传 `pov` 为该角色的同书稳定 ID 或 `reader`。用“本场保留寄信人身份”这类表述交代揭晓限制。保留返回的 `context_id`。修订时用精确 `draft_id=source_version` 定位原稿，并按需 `source_get` 读取。
+2. 尊重人物动机、场景变化和揭晓时点。有限视角需要补证据时，用同一个 `pov` 查询图谱。需要参考原稿或文风时，只取与本场相关且符合揭晓范围的片段。检索不足时保留不确定性。选择具体、有功能的叙事细节，保持作者已有声音。
 3. 用 `source_save(kind="chapter", logical_id="chapter:N", chapter=N, context_id=刚取得的票据, content=最终正文)` 保存完整新版本。编辑既有稿时带 `expected_source_hash`。记录返回的 `source_version`、`source_hash` 和当前 revision；`run_id` 原样传入。
 4. 对这个版本调用 `source_get`，读完所有分页，直至 `next_offset=null`。从实际保存的原文提取 `MemoryDelta`；证据 `quote` 必须与原文逐字匹配，`offset` 是完整源中从 0 开始的字符偏移。随后 `memory_stage(source_version, base_revision=当前revision, delta)` 并记录该版本的 `batch_id`。
-5. 审查同一完整原文与相关上下文，按 [novel-review](../novel-review/SKILL.md) 的标准生成结构化 `Review`，再通过 `source_save(kind="review", review={source_version,source_hash,findings,summary}, content=可读审查报告)` 保存。记录返回的 `review_id`；口头审查不能替代此步骤。
+5. 复用本轮已经完整读取的同一 `source_version` 和哈希，用审查上下文独立核对原文。按 [novel-review](../novel-review/SKILL.md) 生成结构化 `Review`，再通过 `source_save(kind="review", review={source_version,source_hash,findings,summary}, content=可读审查报告)` 保存，并记录 `review_id`。
 6. 检查状态，向作者交付正文/位置、审查重点和候选状态，进入 `awaiting_author`。作者尚未明确采纳时停止，不调用 `source_accept`。本轮的保存、提取与审查无需逐项询问授权，也不要要求作者先确认是否更新记忆。
 
 任意正文改动都产生新版本：重新构建必要上下文、保存、读取、提取和审查。旧 `batch_id`、`review_id`、哈希不能挪给改后的稿件。

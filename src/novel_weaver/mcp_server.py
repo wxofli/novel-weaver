@@ -12,12 +12,12 @@ from .schemas import ACTION_MODELS
 
 DESCRIPTIONS = {
     "book_init": "Initialize a book project and its UUID. Requires an explicit project, title and operation_id.",
-    "book_status": "Read this book's revision, chapter and memory progress, pending work and next actions.",
+    "book_status": "Read revision, chapter and memory progress, and pending work. Use brief=true to skip projection and index scans.",
     "book_import": "Preview or start an explicit chapter import. Preview the mapping before starting it.",
     "source_get": "Read an immutable authoritative source version, with bounded character pagination.",
     "source_save": "Save a versioned source. Chapters require a fresh context_id; reviews require a structured Review.",
     "source_accept": "Accept the exact saved chapter with its staged batch_id, review_id and expected revision.",
-    "context_build": "Build bounded book context for writing, revision, review, planning or queries. Preserve the returned context_id.",
+    "context_build": "Build task-specific context. Writing/revision can use a scene_brief and POV, and return a context_id for saving prose. Review, planning and query are read-only.",
     "memory_stage": "Stage a structured, evidence-backed MemoryDelta for an exact source hash and base revision.",
     "memory_sync": "Read the next accepted source of an active sync job or apply its exact next memory delta.",
     "search": "Search this book's canon, plan or references with chapter and evidence filters.",

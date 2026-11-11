@@ -10,8 +10,8 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTEXT_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"}
-SUPPORTED_EVENTS = CONTEXT_EVENTS | {"Stop", "PreCompact", "Interrupt"}
+CONTEXT_EVENTS = {"SessionStart", "UserPromptSubmit", "PostToolUse"}
+SUPPORTED_EVENTS = CONTEXT_EVENTS | {"Stop"}
 
 
 def _command(root: Path, event: str) -> list[str]:
@@ -65,6 +65,9 @@ def main(argv: list[str] | None = None) -> int:
     result: dict = {}
     try:
         arguments = list(sys.argv[1:] if argv is None else argv)
+        if len(arguments) == 1 and arguments[0] in {"PreToolUse", "PreCompact", "Interrupt"}:
+            print("{}")
+            return 0
         if len(arguments) != 1 or arguments[0] not in SUPPORTED_EVENTS:
             raise ValueError("expected one supported hook event")
         event = arguments[0]

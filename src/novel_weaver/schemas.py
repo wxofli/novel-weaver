@@ -12,6 +12,10 @@ class ReadRequest(Strict):
     book_id: str | None = None
 
 
+class BookStatus(ReadRequest):
+    brief: bool = False
+
+
 class WriteRequest(ReadRequest):
     project: str
     book_id: str
@@ -147,6 +151,13 @@ class MemorySync(WriteRequest):
     delta: MemoryDelta | None = None
 
 
+class SceneBrief(Strict):
+    goal: str = ""
+    story_time: str = ""
+    constraints: list[str] = Field(default_factory=list)
+    reveal_limit: str = ""
+
+
 class ContextBuild(ReadRequest):
     task: Literal["write", "revise", "review", "plan", "query"] = "write"
     chapter: int | None = Field(default=None, ge=1)
@@ -154,6 +165,7 @@ class ContextBuild(ReadRequest):
     entity_ids: list[str] = Field(default_factory=list)
     pov: str | None = None
     draft_id: str | None = None
+    scene_brief: SceneBrief | None = None
     budget_chars: int = Field(default=12000, ge=500, le=100000)
     run_id: str | None = None
 
@@ -196,7 +208,7 @@ class IndexUpdate(WriteRequest):
 
 
 ACTION_MODELS = {
-    "book_init": BookInit, "book_status": ReadRequest, "book_import": BookImport,
+    "book_init": BookInit, "book_status": BookStatus, "book_import": BookImport,
     "source_get": SourceGet, "source_save": SourceSave, "source_accept": SourceAccept,
     "context_build": ContextBuild, "memory_stage": MemoryStage, "memory_sync": MemorySync,
     "search": Search, "graph_query": GraphQuery, "index_status": ReadRequest,

@@ -1,6 +1,6 @@
 {
   "name": "novel-weaver",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "面向长篇小说的中文创作 Skills、隔离项目、证据记忆、检索与作者采纳流程。",
   "keywords": ["novel", "fiction", "writing", "memory", "chinese"],
   "skills": "./skills/",

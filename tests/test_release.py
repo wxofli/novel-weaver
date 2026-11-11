@@ -54,6 +54,7 @@ def test_package_contents_and_secret_exclusions(tmp_path):
         manifest = json.loads(payload.read(module.MANIFEST))
         assert manifest["hooks"].removeprefix("./") in names
         assert manifest["mcpServers"].removeprefix("./") in names
+        assert set(json.loads(payload.read("hooks/hooks.json"))["hooks"]) == {"SessionStart", "UserPromptSubmit", "Stop"}
     assert set(module.FILES) <= set(names)
     assert "src/novel_weaver/__init__.py" in names
     assert "plugin.json" not in names

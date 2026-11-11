@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-Changes after the 0.1.1 preview will be recorded here.
+Changes after the 0.1.2 preview will be recorded here.
+
+## 0.1.2 — Scene context and lean hooks
+
+- Add a scene brief for goal, story time, constraints and reveal limits. Drafting with an explicit POV uses that viewpoint's knowledge. Review uses author-level evidence and references the exact draft version.
+- Keep the scene brief within the context budget and add optional evidence and style excerpts as space allows. Review, planning and query no longer write draft tickets.
+- Ship three default hooks for session start, prompt submission and stop. Stop can only resume fresh candidate memory or review work from the current turn. Author adoption remains explicit.
 
 ## 0.1.1 — Codex desktop hooks
 

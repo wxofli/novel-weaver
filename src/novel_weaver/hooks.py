@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
-CONTEXT_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"}
+CONTEXT_EVENTS = {"SessionStart", "UserPromptSubmit", "PostToolUse"}
 SUPPORTED_EVENTS = CONTEXT_EVENTS | {"Stop"}
-AUTOMATED_NEEDS = {"memory.stage", "memory_stage", "memory.sync", "memory_sync", "review", "source.review", "accept", "source.accept", "source_accept", "index.update", "index_update"}
+AUTOMATED_NEEDS = {"memory.stage", "review"}
 
 
 def execute(action: str, payload: dict) -> dict:
@@ -52,51 +53,87 @@ def _cancelled(event: dict) -> bool:
 
 
 def _short(value, limit: int = 140) -> str:
-    return str(value).replace("\n", " ")[:limit]
+    return " ".join(str(value).splitlines())[:limit]
 
 
-def _actions(status: dict) -> str:
-    labels = []
-    for action in status.get("next_actions", [])[:6]:
-        if isinstance(action, str):
-            labels.append(_short(action, 100))
-        elif isinstance(action, dict):
-            label = _short(action.get("action", ""), 60)
-            for key in ("source_version", "job_id"):
-                if action.get(key):
-                    label += f" {key}={_short(action[key], 60)}"
-            if label:
-                labels.append(label)
-    return "; ".join(labels)
-
-
-def _card(status: dict, project: str, book_id: str, event: dict) -> str:
+def _session_card(status: dict, project: str, book_id: str) -> str:
     data = status.get("data") or {}
-    lines = ["Novel Weaver book state", f"run_id={_run_id(event) or 'unavailable'}", f"book_id={book_id}", f"project={_short(project, 200)}", f"title={_short(data.get('title', ''), 100)}", f"latest_chapter={data.get('latest_chapter', 0)}; memory_frontier={data.get('memory_frontier', 0)}"]
+    lines = ["Novel Weaver book", f"book_id={book_id}", f"project={_short(project, 300)}",
+             f"title={json.dumps(_short(data.get('title', ''), 100), ensure_ascii=False)}",
+             f"accepted_chapter={data.get('latest_chapter', 0)} memory_frontier={data.get('memory_frontier', 0)}"]
+    if data.get("active_job"):
+        job = data["active_job"]
+        lines.append(f"Memory synchronization pending ({job['position']}/{job['total']}).")
+    return "\n".join(lines)
+
+
+def _prompt_card(status: dict, event: dict) -> str:
+    data = status.get("data") or {}
+    run = _run_id(event)
+    lines = [f"Novel Weaver run_id={run}. Pass it to this turn's book work when applicable."] if run else []
     if _plan_mode(event):
-        lines.append("Plan mode is read-only. Use book status, search, graph and source reads to plan the work; do not modify book state.")
-    else:
-        actions = _actions(status)
-        if actions:
-            lines.append("Next actions: " + actions)
-        lines.append("For book authoring requests use this project's Novel Weaver skills and context_build before writing. Keep ordinary conversation outside book memory. Pass the run_id above to this turn's book work when available.")
-    return "\n".join(lines)[:1500]
+        lines.append("Plan mode is read-only. Inspect the book without changing it.")
+    waiting = [_short(item["source_version"], 80) for item in data.get("pending_work", []) if item.get("awaiting_author")]
+    if waiting:
+        lines.append("Awaiting author adoption: " + ", ".join(waiting[:3]) + ".")
+    return "\n".join(lines)
 
 
-def _supported_tool(event: dict) -> bool:
+def _edited_paths(event: dict, cwd: Path) -> set[Path]:
     name = str(event.get("tool_name", ""))
-    if name in {"Write", "Edit", "MultiEdit", "apply_patch"}:
-        return True
-    if name in {"Bash", "Shell", "shell", "exec_command", "mcp__functions__exec"}:
-        payload = event.get("tool_input") or {}
-        return "novelctl" in str(payload.get("command", payload.get("cmd", "")))
-    return any(name.endswith("__" + action) for action in AUTOMATED_NEEDS if "_" in action) or "novel_weaver" in name or "novel-weaver" in name
+    payload = event.get("tool_input") or {}
+    if not isinstance(payload, dict):
+        return set()
+    if name == "apply_patch":
+        paths = re.findall(r"^\*\*\* (?:Update File|Add File|Delete File|Move to): (.+)$", str(payload.get("command", "")), re.MULTILINE)
+    elif name in {"Write", "Edit", "MultiEdit"} and isinstance(payload.get("file_path"), str):
+        paths = [payload["file_path"]]
+    else:
+        paths = []
+    return {(cwd / path.strip()).resolve() for path in paths if Path(path.strip()).suffix.lower() == ".md"}
+
+
+def _post_notice(event: dict, cwd: Path) -> str:
+    name = str(event.get("tool_name", ""))
+    if re.fullmatch(r"mcp__[^ ]*novel[_-]weaver__\w+", name):
+        args = event.get("tool_input") or {}
+        request = args.get("request", {}) if isinstance(args, dict) else {}
+        response = event.get("tool_response") or {}
+        if not isinstance(request, dict) or not isinstance(response, dict) or response.get("isError") or response.get("is_error"):
+            return ""
+        result = response.get("structuredContent", response.get("structured_content", response))
+        project, book_id = request.get("project"), request.get("book_id")
+        if not isinstance(result, dict) or result.get("status") != "partial" or result.get("error"):
+            return ""
+        if not all(isinstance(value, str) and value for value in (project, book_id)) or not Path(project).is_absolute() or result.get("book_id") != book_id:
+            return ""
+        status = execute("book_status", {"project": project, "book_id": book_id, "brief": True})
+        if not status.get("error"):
+            return f"Novel Weaver: the operation on book_id={_short(book_id, 80)} reported partial completion. Inspect its warnings before retrying."
+        return ""
+
+    edited = _edited_paths(event, cwd)
+    if not edited:
+        return ""
+    book = discover_book(str(cwd))
+    if not book:
+        return ""
+    project, book_id = book
+    root = Path(project)
+    if not any(path.is_relative_to(root / "正文") or path.is_relative_to(root / "草稿") for path in edited):
+        return ""
+    status = execute("book_status", {"project": project, "book_id": book_id})
+    changed = (status.get("data") or {}).get("changed_projections", [])
+    paths = [item["path"] for item in changed if (root / item["path"]).resolve() in edited]
+    if not paths:
+        return ""
+    return "Novel Weaver tracked Markdown changed: " + ", ".join(_short(path) for path in paths[:4]) + ". Inspect the diff before saving a new source version."
 
 
 def _continue_reason(status: dict, event: dict) -> str | None:
     run_id = _run_id(event)
     data = status.get("data") or {}
-    if not run_id or event.get("stop_hook_active") is not False or data.get("awaiting_author"):
+    if not run_id or event.get("stop_hook_active") is not False or data.get("awaiting_author") or data.get("active_job"):
         return None
     pending = []
     for item in data.get("pending_work", []):
@@ -104,15 +141,12 @@ def _continue_reason(status: dict, event: dict) -> str | None:
             continue
         if item.get("awaiting_author") or item.get("status") == "awaiting_author" or item.get("automated") is False:
             continue
-        raw_needs = item.get("needs", [])
-        if "awaiting_author" in raw_needs:
-            continue
-        needs = [need for need in raw_needs if need in AUTOMATED_NEEDS]
-        if needs:
+        needs = item.get("needs", [])
+        if needs and set(needs) <= AUTOMATED_NEEDS:
             pending.append(f"{_short(item.get('source_version', 'saved source'), 80)}: {', '.join(needs)}")
     if not pending:
         return None
-    return (f"Novel Weaver has incomplete automated work for this run ({run_id}): " + "; ".join(pending[:5]) + ". Continue the applicable book workflow once using the saved source and exact batch/review IDs. Stop if author input is required.")[:1500]
+    return (f"Novel Weaver has incomplete candidate work for this run ({run_id}): " + "; ".join(pending[:5]) + ". Complete only the listed memory staging or review of those saved drafts. Leave adoption to the author.")[:1500]
 
 
 def handle_event(event_name: str, event: dict) -> dict:
@@ -121,37 +155,24 @@ def handle_event(event_name: str, event: dict) -> dict:
         return {}
     if event_name == "Stop" and (_plan_mode(event) or event.get("stop_hook_active") is not False or not _run_id(event)):
         return {}
-    if event_name == "PreToolUse" and not _supported_tool(event):
-        return {}
     try:
         cwd = event.get("cwd")
         if not isinstance(cwd, str) or not cwd:
             return {}
+        if event_name == "PostToolUse":
+            return _context(event_name, "" if _plan_mode(event) else _post_notice(event, Path(cwd)))
         book = discover_book(cwd)
         if book is None:
             return {}
         project, book_id = book
-        status = execute("book_status", {"project": project, "book_id": book_id})
+        status = execute("book_status", {"project": project, "book_id": book_id, "brief": True})
         if status.get("error"):
             return _context(event_name, "Novel Weaver status unavailable: " + _short(status["error"].get("message", "unknown error"), 500))
-        if event_name in {"SessionStart", "UserPromptSubmit"}:
-            return _context(event_name, _card(status, project, book_id, event))
-        if event_name == "Stop":
-            reason = _continue_reason(status, event)
-            return {"decision": "block", "reason": reason} if reason else {}
-        if _plan_mode(event):
-            return _context(event_name, "Novel Weaver: plan mode is read-only; inspect book sources and state without requesting mutations.")
-        if event_name == "PreToolUse":
-            return _context(event_name, "Novel Weaver: use book tools for authoritative source and memory changes. Chapter saves require fresh context; acceptance requires the exact saved source's staged batch and structured review. Pass this turn's run_id when available. Markdown projections do not replace authoritative source versions.")
-        data = status.get("data") or {}
-        lines = []
-        actions = _actions(status)
-        if actions:
-            lines.append("Novel Weaver next actions: " + actions)
-        changed = data.get("changed_projections") or []
-        if changed:
-            paths = [item.get("path", "") if isinstance(item, dict) else item for item in changed[:6]]
-            lines.append("Changed projections: " + ", ".join(_short(path, 160) for path in paths) + ". Inspect the changes and use source_save for intentional edits; do not silently import them.")
-        return _context(event_name, "\n".join(lines))
+        if event_name == "SessionStart":
+            return _context(event_name, _session_card(status, project, book_id))
+        if event_name == "UserPromptSubmit":
+            return _context(event_name, _prompt_card(status, event))
+        reason = _continue_reason(status, event)
+        return {"decision": "block", "reason": reason} if reason else {}
     except Exception as exc:
         return _context(event_name, "Novel Weaver hook could not read book state: " + _short(exc, 500))

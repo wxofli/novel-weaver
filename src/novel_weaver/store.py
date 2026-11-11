@@ -127,9 +127,9 @@ class Book:
         return int(self.meta("frontier", "0"))
 
     @contextlib.contextmanager
-    def transaction(self):
+    def transaction(self, *, readonly=False):
         try:
-            self.db.execute("BEGIN IMMEDIATE")
+            self.db.execute("BEGIN" if readonly else "BEGIN IMMEDIATE")
             yield
             self.db.commit()
         except BaseException:

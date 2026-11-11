@@ -243,28 +243,36 @@ def book_import(book, r):
     return {"job_id": jid, "chapters": len(mapping), "memory_frontier": 0}
 
 
-def status(book):
-    accepted = {r[0] for r in book.db.execute("SELECT source_id FROM accepted")}
+def status(book, *, brief=False):
     pending = []
-    latest = book.db.execute("SELECT s.* FROM sources s JOIN (SELECT logical_id,MAX(created_at) AS t FROM sources GROUP BY logical_id) l ON s.logical_id=l.logical_id AND s.created_at=l.t WHERE s.kind='chapter'").fetchall()
+    latest = book.db.execute("""SELECT s.id,s.hash,s.context_id,s.run_id FROM sources s
+        JOIN (SELECT logical_id,MAX(created_at) AS t FROM sources WHERE kind='chapter' GROUP BY logical_id) l
+        ON s.logical_id=l.logical_id AND s.created_at=l.t
+        WHERE NOT EXISTS (SELECT 1 FROM accepted a WHERE a.source_id=s.id)""").fetchall()
+    reviewed_versions = set()
+    if latest:
+        for row in book.db.execute("SELECT review_json FROM sources WHERE kind='review'"):
+            review = json.loads(row[0] or "{}")
+            reviewed_versions.add((review.get("source_version"), review.get("source_hash")))
+    revision = book.revision
+    fingerprint = book.fingerprint() if latest else None
     for source in latest:
-        if source["id"] in accepted:
-            continue
-        batch = book.db.execute("SELECT id FROM batches WHERE source_id=? AND base_revision=?", (source["id"], book.revision)).fetchone()
-        reviews = book.db.execute("SELECT review_json FROM sources WHERE kind='review'").fetchall()
-        reviewed = any(json.loads(r[0] or "{}").get("source_version") == source["id"] and json.loads(r[0] or "{}").get("source_hash") == source["hash"] for r in reviews)
-        ctx = book.db.execute("SELECT * FROM contexts WHERE id=?", (source["context_id"],)).fetchone()
-        fresh = bool(ctx and ctx["revision"] == book.revision and ctx["fingerprint"] == book.fingerprint())
+        batch = book.db.execute("SELECT id FROM batches WHERE source_id=? AND base_revision=?", (source["id"], revision)).fetchone()
+        reviewed = (source["id"], source["hash"]) in reviewed_versions
+        ctx = book.db.execute("SELECT revision,fingerprint FROM contexts WHERE id=?", (source["context_id"],)).fetchone()
+        fresh = bool(ctx and ctx["revision"] == revision and ctx["fingerprint"] == fingerprint)
         needs = ([] if fresh else ["context.build"]) + ([] if batch else ["memory.stage"]) + ([] if reviewed else ["review"])
         pending.append({"source_version": source["id"], "run_id": source["run_id"], "needs": needs, "awaiting_author": not needs})
     job = book.active_job()
     if job:
         manifest = json.loads(job["manifest"])
         job = {"job_id": job["id"], "kind": job["kind"], "position": job["position"], "total": len(manifest), "next_source_version": manifest[job["position"]]}
-    return {"project": str(book.root), "title": book.meta("title"), "latest_chapter": book.latest_chapter(),
+    data = {"project": str(book.root), "title": book.meta("title"), "latest_chapter": book.latest_chapter(),
             "memory_frontier": book.frontier(), "active_job": job, "pending_work": pending,
-            "awaiting_author": bool(pending) and all(not p["needs"] for p in pending),
-            "changed_projections": book.projection_changes(), "index_pending": index_status(book)["pending_vectors"]}
+            "awaiting_author": bool(pending) and all(not p["needs"] for p in pending)}
+    if not brief:
+        data.update(changed_projections=book.projection_changes(), index_pending=index_status(book)["pending_vectors"])
+    return data
 
 
 def index_status(book):
@@ -293,8 +301,6 @@ def next_actions(data):
 def handle(book, action, r):
     from . import retrieval
     warnings = []
-    if action == "book_status":
-        return status(book), warnings
     if action == "source_save":
         return source_save(book, r), warnings
     if action == "memory_stage":
@@ -351,15 +357,21 @@ def execute(action: str, payload: dict) -> dict:
             return result
         root = Path(request.project).resolve() if request.project else discover()
         write = action in WRITE_ACTIONS and not (action == "memory_sync" and request.mode == "next")
-        book = Book(root, request.book_id, readonly=not write and action != "context_build")
+        context_ticket_required = action == "context_build" and request.task in {"write", "revise"}
+        book = Book(root, request.book_id, readonly=not write and not context_ticket_required)
         if action == "context_build":
             from .retrieval import build_context
-            with book.transaction():
+            with book.transaction(readonly=not context_ticket_required):
                 data, warnings = build_context(book, request)
-            return envelope(book, data, warnings)
+                return envelope(book, data, warnings)
+        if action == "book_status":
+            with book.transaction(readonly=True):
+                data = status(book, brief=request.brief)
+                state = "awaiting_author" if data["awaiting_author"] and not data["active_job"] else "ok"
+                return envelope(book, data, status=state, next_actions=next_actions(data))
         if not write:
             data, warnings = handle(book, action, request)
-            actions = next_actions(data) if action in ("book_status", "doctor_check") else []
+            actions = next_actions(data) if action == "doctor_check" else []
             state = "awaiting_author" if data.get("awaiting_author") and not data.get("active_job") else "ok"
             return envelope(book, data, warnings, state, actions)
         fingerprint = digest(dumps({"action": action, "request": request.model_dump()}))

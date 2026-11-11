@@ -138,7 +138,7 @@ def test_context_transaction_certifies_its_snapshot(book, monkeypatch):
         return original(b, request)
     monkeypatch.setattr(retrieval, "search", check_transaction)
     try:
-        context = ok(call("context_build", book, chapter=2))
+        context = ok(call("context_build", book, chapter=2, query="新的章纲"))
         ok(future.result(timeout=10))
         assert context["revision"] == 1
         result = call("source_save", book, kind="chapter", logical_id="chapter:2", chapter=2, content="第二章", context_id=context["context_id"])
@@ -210,13 +210,68 @@ def test_unseen_transition_preserves_character_belief_and_hides_closure(book):
     assert "closing_evidence" not in timeline[0] and timeline[0]["valid_to"] is None
     context = ok(call("context_build", book, chapter=3, pov="shen", entity_ids=["jade"]))
     assert context["knowledge"]["shen"]["known"][0]["id"] == "owns-a"
-    assert "owns-b" in context["knowledge"]["shen"]["not_established_as_known"]
+    assert "owns-b" not in json.dumps(context)
     text3 = "沈舟终于发现玉佩在林雪那里，先前的认知已经过时。"
     third = draft(book, 3, text3)
     ok(accept(book, third, text3, delta(text3, knowledge=[
         {"character": "shen", "fact": "owns-a", "state": "rejects", "evidence": evidence(text3, text3)},
         {"character": "shen", "fact": "owns-b", "state": "knows", "evidence": evidence(text3, text3)}])))
     assert [f["id"] for f in ok(call("graph_query", book, entity="jade", pov="shen"))["facts"]] == ["owns-b"]
+
+
+def test_limited_drafting_omits_author_secrets_but_review_can_retrieve_them(book):
+    from novel_weaver.store import Book, dumps
+
+    secret = "寄信人是馆长。"
+    note = ok(call("source_save", book, kind="setting", logical_id="setting:letter", content=secret))
+    changes = delta(secret, entities=[{"id": "lin", "name": "林澈"}, {"id": "letter", "name": "密信"}],
+                    facts=[{"id": "sender-secret", "subject": "letter", "predicate": "寄信人", "value": "馆长",
+                            "evidence": evidence(secret, secret)}])
+    batch = ok(call("memory_stage", book, source_version=note["source_version"], base_revision=0, delta=changes))
+    ok(call("source_accept", book, source_version=note["source_version"], batch_id=batch["batch_id"], expected_revision=0))
+    options = {"chapter": 1, "pov": "lin", "entity_ids": ["letter"], "query": "密信的寄信人",
+               "scene_brief": {"goal": "林澈发现密信", "reveal_limit": "本场保留寄信人身份"}}
+    writing = ok(call("context_build", book, **options))
+    assert writing["view"] == "pov" and "馆长" not in dumps(writing)
+    assert writing["scene_brief"]["reveal_limit"] == "本场保留寄信人身份"
+    source = ok(call("source_save", book, kind="chapter", logical_id="chapter:1", chapter=1, content=secret,
+                     context_id=writing["context_id"]))
+    revision = ok(call("context_build", book, **options, task="revise", draft_id=source["source_version"]))
+    assert revision["draft"]["source_version"] == source["source_version"] and "馆长" not in dumps(revision)
+    review = ok(call("context_build", book, **options, task="review", draft_id=source["source_version"]))
+    assert review["view"] == "author" and review["context_id"] is None
+    assert review["facts"][0]["quote"] == secret
+    assert "text" not in review["draft"]
+    storage = Book(book["project"], book["book_id"], readonly=True)
+    try:
+        assert storage.db.execute("SELECT COUNT(*) FROM contexts").fetchone()[0] == 2
+    finally:
+        storage.close()
+
+
+def test_long_style_example_does_not_crowd_out_the_scene_brief(book):
+    from novel_weaver.store import dumps
+
+    initial(book)
+    style = ok(call("source_save", book, kind="style", logical_id="style:innkeeper", content="远方商旅描述风景。" * 1900))
+    ok(call("source_accept", book, source_version=style["source_version"], expected_revision=1))
+    brief = {"goal": "沈舟从灯塔向林雪告别", "constraints": ["写出不舍，保留停顿"]}
+    context = ok(call("context_build", book, chapter=2, scene_brief=brief, entity_ids=["shen"], budget_chars=3500))
+    assert context["scene_brief"]["goal"] == brief["goal"]
+    assert context["scene_brief"]["constraints"] == brief["constraints"]
+    assert context["facts"][0]["id"] == "owns-a" and context["previous_tail"]
+    assert len(dumps(context)) <= 3500
+
+
+def test_brief_status_skips_projection_scanning(book, monkeypatch):
+    from novel_weaver.store import Book
+
+    def scan(_):
+        raise AssertionError("brief status should not scan projections")
+
+    monkeypatch.setattr(Book, "projection_changes", scan)
+    status = ok(call("book_status", book, brief=True))
+    assert status["latest_chapter"] == 0 and "changed_projections" not in status
 
 
 def test_unreadable_projection_cannot_rollback_memory_commit(book, monkeypatch):

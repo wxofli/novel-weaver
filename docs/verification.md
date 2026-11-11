@@ -48,10 +48,16 @@ uv run --locked --extra vector python scripts/benchmark.py
 2. 标准库 hook 包装器启动实际处理器，返回合法的 SessionStart 状态卡。
 3. 插件包含所需清单、8 个 Skills、共享核心、适配器和启动脚本。
 
-## 宿主验收边界
+## v0.1.0 宿主验证
 
 发布准备阶段还在隔离的 `CODEX_HOME` 中使用 Codex CLI 0.167.1，从白名单 ZIP 的解压目录运行统一安装器。首次安装和重复安装均成功，依赖准备与运行检查使用 Codex 返回的实际插件缓存目录；这验证了本地 marketplace 注册和安装器幂等路径，没有改动用户真实配置或授予 hook 信任。
 
 从实际插件缓存目录启动 MCP stdio，验证了 16 个工具的发现，以及新书初始化和状态读取。
 
-尚未在用户真实 Codex 客户端安装、授予 hook 信任或完成宿主内全流程激活。包内 README 给出了本地安装与一次性信任步骤；客户端版本、工具前缀与权限仍需实际安装验收。Skills 引导与 hooks 提醒可以促使 Agent 主动检索、更新，但不能保证宿主模型每次都正确理解小说语义。
+v0.1.0 在实际桌面端安装后，Skills 和 MCP 可用，设置中的 Hooks 列表为空。同一台 Windows 机器上的 Codex CLI 0.167.1 也未加载根 `plugin.json` 声明的 hooks。
+
+## v0.1.1 桌面兼容性
+
+改用 Codex 兼容清单后，实际用户配置下的 Codex 宿主发现了 8 个 Skills、16 个 MCP 工具和 7 个待审阅的 hooks。使用测试小说验证了建书、候选稿采纳后查询图谱事实，以及两章 TXT 导入和记忆同步。
+
+用户在桌面端审阅信任后，宿主报告 7 个 hooks 均已信任。在一轮真实模型会话中，SessionStart 和 UserPromptSubmit 生成了小说状态提醒，PreToolUse、PostToolUse 和 Stop 完成执行。上下文工具通过宿主审批后成功运行，图谱工具返回了第一章的事实和原文。PreCompact 和 Interrupt 在该轮中仅验证了发现和信任状态。

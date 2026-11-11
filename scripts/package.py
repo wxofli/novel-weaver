@@ -1,4 +1,4 @@
-"""Build the portable plugin ZIP from an explicit release allowlist."""
+"""Build the Codex plugin ZIP from an explicit release allowlist."""
 from pathlib import Path
 import ast
 import json
@@ -6,15 +6,18 @@ import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ("plugin.json", "mcp.json", "pyproject.toml", "uv.lock", ".python-version", "README.md", "README.en.md",
+MANIFEST = ".codex-plugin/plugin.json"
+FILES = (MANIFEST, ".mcp.json", "pyproject.toml", "uv.lock", ".python-version", "README.md", "README.en.md",
          "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
          "THIRD_PARTY_NOTICES.md", ".agents/plugins/marketplace.json")
 DIRECTORIES = ("src", "skills", "hooks", "scripts", "docs", "examples")
 
 
 def version(root=ROOT):
+    if (root / "plugin.json").exists():
+        raise ValueError("A root plugin.json takes precedence over the Codex manifest and can prevent hooks from loading")
     value = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    plugin = json.loads((root / "plugin.json").read_text(encoding="utf-8"))["version"]
+    plugin = json.loads((root / MANIFEST).read_text(encoding="utf-8"))["version"]
     tree = ast.parse((root / "src/novel_weaver/__init__.py").read_text(encoding="utf-8"))
     runtime = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
                    and any(isinstance(t, ast.Name) and t.id == "__version__" for t in n.targets))

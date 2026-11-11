@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-Changes after the 0.1.0 preview will be recorded here.
+Changes after the 0.1.1 preview will be recorded here.
+
+## 0.1.1 — Codex desktop hooks
+
+- Fixed an empty Hooks list in Codex desktop by packaging Novel Weaver with the Codex compatibility manifest. The installed plugin exposes all seven lifecycle hooks for review.
+- Start MCP from the installed plugin directory using the environment prepared by the installer. Startup uses a cache inside that environment and skips dependency synchronization.
+- Updated the installation and upgrade instructions. After upgrading, restart Codex and review the new installation in **Settings > Hooks**.
 
 ## 0.1.0 — Preview
 

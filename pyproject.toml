@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "novel-weaver"
-version = "0.1.0"
+version = "0.1.1"
 description = "Book-isolated, evidence-backed memory and tools for Codex fiction writing"
 readme = "README.md"
 license = "MIT"
@@ -34,7 +34,7 @@ exclude = ["**/__pycache__/**", "**/*.pyc", "**/.env*", "**/.novel/**", "**/*.sq
 packages = ["src/novel_weaver"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/scripts", "/skills", "/hooks", "/docs", "/examples", "/tests", "/.agents/plugins/marketplace.json", "/plugin.json", "/mcp.json", "/pyproject.toml", "/uv.lock", "/.python-version", "/README*", "/LICENSE", "/CHANGELOG.md", "/CONTRIBUTING.md", "/SECURITY.md", "/CODE_OF_CONDUCT.md", "/THIRD_PARTY_NOTICES.md"]
+include = ["/src", "/scripts", "/skills", "/hooks", "/docs", "/examples", "/tests", "/.agents/plugins/marketplace.json", "/.codex-plugin/plugin.json", "/.mcp.json", "/pyproject.toml", "/uv.lock", "/.python-version", "/README*", "/LICENSE", "/CHANGELOG.md", "/CONTRIBUTING.md", "/SECURITY.md", "/CODE_OF_CONDUCT.md", "/THIRD_PARTY_NOTICES.md"]
 exclude = ["**/__pycache__/**", "**/*.pyc", "**/.env*", "**/.novel/**", "**/*.sqlite*", "**/*.db", "**/*.key", "**/*.pem", "**/*credentials*", "**/*secrets*", "**/.cache/**", "**/.venv/**", "**/books/**", "**/作品/**"]
 
 

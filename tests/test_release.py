@@ -3,12 +3,14 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import tomllib
 import zipfile
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
 
 def script(name):
@@ -40,7 +42,8 @@ def test_package_contents_and_secret_exclusions(tmp_path):
         (root / directory).mkdir(exist_ok=True)
     target = root / "src/novel_weaver/__init__.py"
     target.parent.mkdir()
-    target.write_text('__version__ = "0.1.0"', encoding="utf-8")
+    shutil.copyfile(ROOT / "src/novel_weaver/__init__.py", target)
+    shutil.copyfile(ROOT / "hooks/hooks.json", root / "hooks/hooks.json")
     for filename in ("docs/.env", "src/credentials.json", "examples/private.sqlite", "scripts/__pycache__/x.pyc", "docs/.novel/project.json"):
         path = root / filename
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,10 +51,18 @@ def test_package_contents_and_secret_exclusions(tmp_path):
     archive = module.package(tmp_path / "plugin.zip", root=root)
     with zipfile.ZipFile(archive) as payload:
         names = payload.namelist()
+        manifest = json.loads(payload.read(module.MANIFEST))
+        assert manifest["hooks"].removeprefix("./") in names
+        assert manifest["mcpServers"].removeprefix("./") in names
     assert set(module.FILES) <= set(names)
     assert "src/novel_weaver/__init__.py" in names
+    assert "plugin.json" not in names
     assert not any("private" in name or "credentials" in name or ".env" in name or ".novel" in name or "__pycache__" in name for name in names)
-    (root / "plugin.json").write_text('{"version":"99.0.0"}', encoding="utf-8")
+    (root / "plugin.json").write_text('{}', encoding="utf-8")
+    with pytest.raises(ValueError, match="takes precedence"):
+        module.package(tmp_path / "shadowed.zip", root=root)
+    (root / "plugin.json").unlink()
+    (root / module.MANIFEST).write_text('{"version":"99.0.0"}', encoding="utf-8")
     with pytest.raises(ValueError, match="Version mismatch"):
         module.package(tmp_path / "mismatch.zip", root=root)
 
@@ -63,7 +74,7 @@ def installer(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "find_command", lambda name: name)
     installed = tmp_path / "actual installed directory"
     installed.mkdir()
-    (installed / "pyproject.toml").write_text('[project]\nversion="0.1.0"\n', encoding="utf-8")
+    (installed / "pyproject.toml").write_text(f'[project]\nversion="{VERSION}"\n', encoding="utf-8")
     (installed / "uv.lock").touch()
     calls = []
 
@@ -84,7 +95,7 @@ def test_installer_uses_actual_path_and_repeats_safely(installer):
     first = module.install()
     second = module.install()
     assert first == second
-    assert calls[0] == ["codex", "plugin", "marketplace", "add", "wxofli/novel-weaver", "--ref", "v0.1.0", "--json"]
+    assert calls[0] == ["codex", "plugin", "marketplace", "add", "wxofli/novel-weaver", "--ref", f"v{VERSION}", "--json"]
     assert calls[2] == ["uv", "sync", "--locked", "--project", str(installed)]
     assert calls[3] == ["uv", "run", "--locked", "--no-sync", "--project", str(installed), "novelctl", "--help"]
     assert len(calls) == 8

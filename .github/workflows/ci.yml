@@ -29,4 +29,4 @@ jobs:
       - name: Test core and adapters
         run: uv run --locked pytest --basetemp .cache/ci-pytest
       - name: Validate package JSON
-        run: uv run --locked python -c "import json; from pathlib import Path; [json.loads(Path(p).read_text(encoding='utf-8')) for p in ('plugin.json','mcp.json','hooks/hooks.json')]"
+        run: uv run --locked python -c "import json; from pathlib import Path; [json.loads(Path(p).read_text(encoding='utf-8')) for p in ('.codex-plugin/plugin.json','.mcp.json','hooks/hooks.json')]"

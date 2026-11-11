@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "novel_weaver": {
+      "command": "uv",
+      "args": ["run", "--project", ".", "--locked", "--no-sync", "--cache-dir", ".venv/.uv-cache", "novelctl", "mcp", "serve"],
+      "cwd": ".",
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}

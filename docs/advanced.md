@@ -30,13 +30,13 @@ uv run --locked novelctl context build --project "$bookDir" --book-id "$bookId" 
 
 ## 在 Codex 中安装
 
-仓库是官方 portable Agent Plugins 布局：根 `plugin.json`、根 `mcp.json`、`skills/` 与 `hooks/hooks.json`。本地 stdio MCP 使用：
+插件使用 Codex 兼容布局，包括 `.codex-plugin/plugin.json`、`.mcp.json`、`skills/` 与 `hooks/hooks.json`。在安装器已准备好依赖的插件目录，MCP 启动命令为：
 
 ```sh
-uv run --project "插件根目录" --locked novelctl mcp serve
+uv run --project . --locked --no-sync --cache-dir .venv/.uv-cache novelctl mcp serve
 ```
 
-`${PLUGIN_ROOT}` 由插件宿主在清单中解析。先在安装后的插件目录准备好锁定环境。MCP 需要能找到 `uv`；hooks 由标准库包装器启动，需要能找到 `python3`（Windows 为 `python`），优先使用插件 `.venv` 的 Python，缺失时仅尝试不安装依赖的离线 uv。运行环境需要能写入作者指定的书目录。
+MCP 从已安装的插件目录启动，需要能找到 `uv`。hooks 由标准库包装器启动，需要能找到 `python3`（Windows 为 `python`），优先使用插件 `.venv` 的 Python，缺失时仅尝试不安装依赖的离线 uv。运行环境需要能写入作者指定的书目录。
 
 按[官方本地插件安装说明](https://developers.openai.com/plugins/build/plugins#install-a-local-plugin-manually)，可把整个插件放在一个工作仓库的 `plugins/novel-weaver/`，在该仓库 `.agents/plugins/marketplace.json` 合并以下条目，再重启桌面客户端，从 Plugins Directory 的对应本地来源安装：
 
@@ -53,7 +53,7 @@ uv run --project "插件根目录" --locked novelctl mcp serve
 }
 ```
 
-路径相对于 marketplace 根目录。这里给出安装范例，项目不会自动改写全局、用户或其他仓库的 Codex 配置；已有 marketplace 应合并条目，保留其他插件。源码更新后同步安装来源并刷新/重启客户端。本包含生命周期 hooks，应使用支持它们的 Codex 桌面本地安装；具体可用入口以客户端为准。
+路径相对于 marketplace 根目录。已有 marketplace 应合并条目，保留其他插件。通过界面安装后，在实际安装目录运行 `uv sync --locked` 准备依赖。源码更新后同步安装来源并重启客户端。生命周期 hooks 需要支持插件 hooks 的 Codex 本地宿主。
 
 安装后在 Codex 的 **Review hooks / Settings > Hooks**（CLI 为 `/hooks`）审阅并信任一次当前 hook 定义；更改定义或脚本后需重新信任。安装或启用插件不会自动赋予 hooks 信任。参见[官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)。
 
@@ -241,11 +241,11 @@ uv run --locked --extra vector python scripts/benchmark.py
 uv run --locked python scripts/package.py
 ```
 
-产物为 `dist/novel-weaver-0.1.0.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
+产物为 `dist/novel-weaver-0.1.1.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
 
 已有本地依赖时，也可 `python scripts/launch.py --help` 调试源码；它仅加载 `src/` 与可选 `.deps/`，不执行 pip 或下载。正式 MCP 使用 `uv` 和 `uv.lock`，hooks 使用上述标准库安全包装器。
 
-当前限制：只导入 TXT/Markdown；不提供 DOCX/EPUB 导入、网页工作台、自动发布或后台无限写作。语义记忆与审查质量依赖宿主模型，结构校验不能证明故事理解正确。插件清单、stdio 适配与隔离 Codex CLI 本地安装已经验证；**尚未在用户真实客户端完成 hook 信任及全流程激活验收**，具体范围见[验收记录](verification.md)。
+当前导入格式为 TXT 和 Markdown。语义记忆与审查质量依赖宿主模型。Codex 安装、MCP 与 hooks 的实测范围见[验收记录](verification.md)。
 
 ## 调研参考
 

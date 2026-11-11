@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.29"
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked --extra vector --extra dev
+      - run: uv run --locked python -c "from pathlib import Path; Path('.cache').mkdir(exist_ok=True)"
+      - run: uv run --locked pytest --basetemp .cache/release-pytest
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.29"
+          python-version: "3.13"
+      - name: Validate tag and versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: uv run --no-project python -c "import os; from scripts.package import version; assert os.environ['RELEASE_TAG'] == 'v' + version()"
+      - run: uv run --no-project python scripts/package.py
+      - run: uv build
+      - name: Checksums
+        run: uv run --no-project python scripts/checksums.py
+      - name: Select version release notes
+        run: uv run --no-project python scripts/release_notes.py > release-notes.md
+      - name: Attach draft assets then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          gh release create "$RELEASE_TAG" --draft --prerelease --title "Novel Weaver $RELEASE_TAG" --notes-file release-notes.md
+          gh release upload "$RELEASE_TAG" dist/*
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease

@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.29"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked --extra vector --extra dev
+      - name: Prepare test temporary parent
+        run: uv run --locked python -c "from pathlib import Path; Path('.cache').mkdir(exist_ok=True)"
+      - name: Test core and adapters
+        run: uv run --locked pytest --basetemp .cache/ci-pytest
+      - name: Validate package JSON
+        run: uv run --locked python -c "import json; from pathlib import Path; [json.loads(Path(p).read_text(encoding='utf-8')) for p in ('plugin.json','mcp.json','hooks/hooks.json')]"

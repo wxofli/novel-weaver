@@ -70,6 +70,23 @@ def initial(book):
     return source, text
 
 
+def test_book_init_adds_narration_rule_to_project_instructions(tmp_path):
+    instructions = tmp_path / "AGENTS.md"
+    author_rules = "# 作者约定\n故事发生在旧港。\n"
+    instructions.write_text(author_rules, encoding="utf-8")
+    payload = {"project": str(tmp_path), "title": "旧港", "operation_id": "init-old-port"}
+
+    book = ok(call("book_init", **payload))
+    assert ok(call("book_init", **payload)) == book
+
+    generated = instructions.read_text(encoding="utf-8")
+    assert generated.startswith(author_rules)
+    assert generated.count("<!-- novel-weaver -->") == 1
+    assert "Write narrative prose in third person" in generated
+    assert "only when the author explicitly requests it" in generated
+    assert "first person in dialogue" in generated
+
+
 def test_isolation_and_knowledge(book, tmp_path):
     initial(book)
     other = ok(call("book_init", project=str(tmp_path / "other"), title="另一本"))

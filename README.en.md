@@ -4,15 +4,15 @@
 
 An evidence-backed fiction-writing plugin for Codex. Plan, draft, review and continue a novel with isolated memory for each book. Every fact points back to a source version and quotation; drafts become canon only when the author explicitly adopts that version.
 
-Version 0.1.2 is a preview with separate drafting and review context. Drafting with an explicit viewpoint uses what that viewpoint knows, believes or has heard. Review can retrieve author-level evidence. The plugin supports TXT/Markdown imports, local graph and keyword search, versioned drafts and recovery.
+Version 0.1.3 is a preview with separate drafting and review context. Drafting with an explicit viewpoint uses what that viewpoint knows, believes or has heard. Review can retrieve author-level evidence. The plugin supports TXT/Markdown imports, local graph and keyword search, versioned drafts and recovery.
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/getting-started/installation/) and a Codex version supporting plugins and hooks. Extract the plugin ZIP from the [release page](https://github.com/wxofli/novel-weaver/releases/tag/v0.1.2) and run this in the extracted directory:
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/getting-started/installation/) and a Codex version supporting plugins and hooks. Extract the plugin ZIP from the [release page](https://github.com/wxofli/novel-weaver/releases/tag/v0.1.3) and run this in the extracted directory:
 
 ```sh
 uv run --no-project python scripts/install.py
 ```
 
-The installer registers `wxofli/novel-weaver` at `v0.1.2`, installs through Codex, then prepares the locked environment in the installed copy. Use `--local .` to install directly from the extracted files, or `--dry-run` to inspect the plan. For an existing installation, see the [upgrade steps](docs/getting-started.md#更新与卸载).
+The installer registers `wxofli/novel-weaver` at `v0.1.3`, installs through Codex, then prepares the locked environment in the installed copy. Use `--local .` to install directly from the extracted files, or `--dry-run` to inspect the plan. For an existing installation, see the [upgrade steps](docs/getting-started.md#更新与卸载).
 
 Restart Codex, then review and trust the hooks in Settings > Hooks (CLI: `/hooks`). The installer never grants hook trust or deletes books. See [verification](docs/verification.md) for the actual host-validation boundary.
 

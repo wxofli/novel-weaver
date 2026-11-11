@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-Changes after the 0.1.2 preview will be recorded here.
+Changes after the 0.1.3 preview will be recorded here.
+
+## 0.1.3 — Third-person narration
+
+- Default to third-person narration in samples, new drafts and revisions. Use a first-person narrator only where the author explicitly requests it. Dialogue, clearly marked direct thoughts and letters can use first person in character.
+- Carry narrative person in the scene brief, correct unapproved shifts before saving, and cite the draft in review when narrative person changes unexpectedly.
+- Include the same rules in `AGENTS.md` when initializing a book project.
 
 ## 0.1.2 — Scene context and lean hooks
 

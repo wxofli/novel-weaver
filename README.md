@@ -4,17 +4,17 @@
 
 让 Codex 帮你构思、规划、写作和审查长篇小说，记住**哪些事已发生、谁知道什么、证据在哪一版原文中**。每本书独立保存资料；正文先存为候选稿，只有作者明确说“采用这一版”才进入正史并更新记忆。
 
-**v0.1.2 是预览版。** 支持 TXT / Markdown 导入、本地证据记忆、检索和续写。有限视角写稿使用该视角能掌握的线索，审稿可以按需查作者设定和原文。写作与语义提取由 Codex 宿主模型完成，请审阅候选稿。[验收记录](docs/verification.md)
+**v0.1.3 是预览版。** 支持 TXT / Markdown 导入、本地证据记忆、检索和续写。有限视角写稿使用该视角能掌握的线索，审稿可以按需查作者设定和原文。写作与语义提取由 Codex 宿主模型完成，请审阅候选稿。[验收记录](docs/verification.md)
 
 ## 安装
 
-需要支持插件与 hooks 的 Codex、Python 3.11+、[uv](https://docs.astral.sh/uv/getting-started/installation/)，以及可访问 GitHub 和 Python 包源的网络。下载并解压[发布页](https://github.com/wxofli/novel-weaver/releases/tag/v0.1.2)里的插件 ZIP，在解压目录运行：
+需要支持插件与 hooks 的 Codex、Python 3.11+、[uv](https://docs.astral.sh/uv/getting-started/installation/)，以及可访问 GitHub 和 Python 包源的网络。下载并解压[发布页](https://github.com/wxofli/novel-weaver/releases/tag/v0.1.3)里的插件 ZIP，在解压目录运行：
 
 ```sh
 uv run --no-project python scripts/install.py
 ```
 
-默认从 `wxofli/novel-weaver` 的 `v0.1.2` 标签注册来源，通过 Codex 安装插件并准备运行环境。加 `--dry-run` 可先查看计划。已安装旧版的用户请先按[更新说明](docs/getting-started.md#更新与卸载)更换版本来源。
+默认从 `wxofli/novel-weaver` 的 `v0.1.3` 标签注册来源，通过 Codex 安装插件并准备运行环境。加 `--dry-run` 可先查看计划。已安装旧版的用户请先按[更新说明](docs/getting-started.md#更新与卸载)更换版本来源。
 
 使用解压后的 ZIP 或本地源码：
 
@@ -26,7 +26,7 @@ uv run --no-project python scripts/install.py --local .
 
 也可以把这段话复制给 Codex：
 
-> 请帮我安装 https://github.com/wxofli/novel-weaver 的 v0.1.2 插件。先检查 Codex 和 uv，再按仓库 README 运行安装器，验证安装目录中的工具能启动，最后提示我审阅 hooks。如果我提供的是本地解压包，请使用 `--local` 加上该目录。
+> 请帮我安装 https://github.com/wxofli/novel-weaver 的 v0.1.3 插件。先检查 Codex 和 uv，再按仓库 README 运行安装器，验证安装目录中的工具能启动，最后提示我审阅 hooks。如果我提供的是本地解压包，请使用 `--local` 加上该目录。
 
 ## 写第一本书
 

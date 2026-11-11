@@ -241,7 +241,7 @@ uv run --locked --extra vector python scripts/benchmark.py
 uv run --locked python scripts/package.py
 ```
 
-产物为 `dist/novel-weaver-0.1.2.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
+产物为 `dist/novel-weaver-0.1.3.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
 
 已有本地依赖时，也可 `python scripts/launch.py --help` 调试源码；它仅加载 `src/` 与可选 `.deps/`，不执行 pip 或下载。正式 MCP 使用 `uv` 和 `uv.lock`，hooks 使用上述标准库安全包装器。
 

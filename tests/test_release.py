@@ -2,6 +2,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import posixpath
+import re
 import subprocess
 import tomllib
 import zipfile
@@ -66,6 +68,24 @@ def test_package_contents_and_secret_exclusions(tmp_path):
     (root / module.MANIFEST).write_text('{"version":"99.0.0"}', encoding="utf-8")
     with pytest.raises(ValueError, match="Version mismatch"):
         module.package(tmp_path / "mismatch.zip", root=root)
+
+
+def test_adaptation_workflow_and_its_dependencies_are_packaged(tmp_path):
+    archive = script("package").package(tmp_path / "plugin.zip")
+    with zipfile.ZipFile(archive) as payload:
+        names = set(payload.namelist())
+        manifest = json.loads(payload.read(".codex-plugin/plugin.json"))
+        skill_root = manifest["skills"].removeprefix("./").rstrip("/")
+        entry = f"{skill_root}/novel-adapt/SKILL.md"
+        router = f"{skill_root}/novel/SKILL.md"
+        assert entry in names
+        assert "../novel-adapt/SKILL.md" in payload.read(router).decode("utf-8")
+        text = payload.read(entry).decode("utf-8")
+        references = re.findall(r"\]\(([^)#]+\.md)(?:#[^)]*)?\)", text)
+        assert references
+        for reference in references:
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(entry), reference))
+            assert target in names, f"Unpackaged adaptation dependency: {target}"
 
 
 @pytest.fixture

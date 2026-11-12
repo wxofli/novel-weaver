@@ -55,6 +55,8 @@ MCP 从已安装的插件目录启动，需要能找到 `uv`。hooks 由标准�
 
 路径相对于 marketplace 根目录。已有 marketplace 应合并条目，保留其他插件。通过界面安装后，在实际安装目录运行 `uv sync --locked` 准备依赖。源码更新后同步安装来源并重启客户端。生命周期 hooks 需要支持插件 hooks 的 Codex 本地宿主。
 
+从开发工作区创建本地来源时，先用 `python scripts/package.py` 生成发布 ZIP，再解压到独立的干净目录并以该目录作为安装源。Codex 安装时会复制来源目录；直接指向含 `.cache`、`.venv` 或作者书稿的工作区可能占满磁盘或将不应打包的文件带入插件缓存。
+
 安装后在 Codex 的 **Review hooks / Settings > Hooks**（CLI 为 `/hooks`）审阅并信任一次当前 hook 定义；更改定义或脚本后需重新信任。安装或启用插件不会自动赋予 hooks 信任。参见[官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)。
 
 ## 作者如何使用
@@ -65,12 +67,15 @@ MCP 从已安装的插件目录启动，需要能找到 `uv`。hooks 由标准�
 | --- | --- | --- |
 | “给我三个以旧港为背景的悬疑点子” | `novel-idea` | 讨论方案，不自动建书 |
 | “查一下十九世纪港口检疫的资料” | `novel-research` | 有来源的参考笔记 |
+| “把韩文小说的故事迁到中文网文背景” | `novel-adapt` | 编排选材、拆解、文化迁移、规划、试写与审校 |
 | “规划下一卷，让沈青与船长决裂” | `novel-plan` | 计划与事实分离 |
 | “继续写第 2 章，保持沈青的有限视角” | `novel-write` | 上下文、稿件、候选记忆与审查 |
 | “检查这一章有没有提前泄密” | `novel-review` | 引文支持的审查记录 |
 | “沈青到第 3 章知道谁是船主吗？” | `novel-memory` | 历史章与人物知情过滤 |
 | “把这份旧稿导入，之后接着写” | `novel-import` | 预览映射、确认导入、顺序建记忆 |
 | “现在这本书还有什么待办？” | `novel` | 项目状态与合适的下一步 |
+
+`novel` 是通用路由入口，`novel-adapt` 是跨文化改编的专门编排入口：它按需读取上表中相关的子 Skill，携带来源、权利状态、用户决定和已生成材料，不需要一次加载全部 Skill。它也可以与当前环境中可用、且适合该步骤的其他 Skill 组合；这些 Skill 不改变 Novel Weaver 的身份、版本和采纳协议。调研和计划不能替代已发生的剧情，参考原作不能通过旧稿导入流程自动进入正史。
 
 写作的实际闭环是：
 
@@ -241,7 +246,7 @@ uv run --locked --extra vector python scripts/benchmark.py
 uv run --locked python scripts/package.py
 ```
 
-产物为 `dist/novel-weaver-0.1.3.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
+产物为 `dist/novel-weaver-0.1.4.zip`。打包按发布文件白名单收集源码、Skills、清单与文档，不包含 `.venv`、缓存或作者书目录。
 
 已有本地依赖时，也可 `python scripts/launch.py --help` 调试源码；它仅加载 `src/` 与可选 `.deps/`，不执行 pip 或下载。正式 MCP 使用 `uv` 和 `uv.lock`，hooks 使用上述标准库安全包装器。
 

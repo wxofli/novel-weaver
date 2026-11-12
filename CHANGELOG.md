@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-Changes after the 0.1.3 preview will be recorded here.
+Changes after the 0.1.4 preview will be recorded here.
+
+## 0.1.4 — Cross-cultural adaptation workflow
+
+- Add a cross-cultural adaptation workflow that coordinates research, story planning, drafting and review while preserving source, rights, project and author-adoption boundaries.
+- Route adaptation requests through the main novel entry and document how to combine it with other available skills.
+- Clarify that local development installations should use an extracted release package to avoid copying workspace caches, virtual environments or manuscripts into the plugin cache.
 
 ## 0.1.3 — Third-person narration
 

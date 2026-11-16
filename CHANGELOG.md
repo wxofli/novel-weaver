@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-Changes after the 0.1.4 preview will be recorded here.
+Changes after the 0.1.5 preview will be recorded here.
+
+## 0.1.5 — Writing, reading and editorial review
+
+- Add a long-form reading skill with version coverage and separate reader-expectation notes.
+- Expand writing and review guidance for scene value, repetition, voice, staged payoff and ending completeness; preserve genre differences and evidence/adoption boundaries.
+- Add repository guidance, an optional book-instructions supplement, synthetic counterexamples and editorial validation. Runtime behavior, book initialization and hooks are unchanged; existing installed plugins and books are not migrated automatically.
+- Document multi-source review, delegated adoption, context selection and batch revision as future backend work, not current API capabilities.
 
 ## 0.1.4 — Cross-cultural adaptation workflow
 

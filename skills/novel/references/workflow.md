@@ -51,7 +51,7 @@ uv run --project /path/to/novel-weaver --locked novelctl memory stage --input de
 
 ## 写章与采纳
 
-固定顺序是 `context_build` → `source_save` 章源 → `source_get` 全文 → `memory_stage` → `source_save` 结构化审查 → 等待作者 → `source_accept`。先保存的是候选，不能先更新正史。
+固定顺序是 `context_build` → `source_save` 章源 → `source_get` 全文 → `memory_stage` → `source_save` 结构化审查 → 核实作者采纳授权 → `source_accept`。先保存的是候选，不能先更新正史。没有明确采纳或已满足的适用条件授权时等待作者；已有授权不逐次重问。独立审查等条件由执行流程实际核实，当前后端不代替判断授权条件或文学质量。
 
 章节保存使用 `kind="chapter"`、`chapter=N`、`logical_id="chapter:N"` 及该章 `write|revise` 的新鲜 `context_id`。票据与当时 revision、已采纳源指纹绑定。章节源及其 `context_id` 绑定不可变：票据过期后，仅重新 `context_build` 不能修复旧源。必须在新上下文中核对原文，再 `source_save` 一个绑定新 `context_id` 的章节版本，即使文字未改也如此；然后读取新源、重新 stage、保存新审查，并按作者采纳边界提交新版本。不能重绑旧源或复用其 batch/review。源内容每次保存产生新的不可变 `source_version`、`source_hash`；乐观编辑可带 `expected_source_hash`。
 
@@ -79,7 +79,7 @@ uv run --project /path/to/novel-weaver --locked novelctl memory stage --input de
 
 `findings` 每项是 `{severity,message,quote}`，severity 为 `info|warning|critical`。quote 非空时必须来自该原文。返回的 `review_id` 是审查源的 ID，区别于被审正文的 `source_version`。
 
-自动保存、提取和审查做完后读取状态，作者未采纳则 `awaiting_author`。明确采用这一版后才请求：
+自动保存、提取和审查做完后读取状态，没有适用的采纳授权则 `awaiting_author`。明确采用这一版，或已有条件授权适用且全部条件满足后才请求：
 
 ```json
 {

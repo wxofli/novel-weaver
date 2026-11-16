@@ -11,6 +11,6 @@ uv run --locked pytest --basetemp .cache/pytest-local
 uv run --locked python scripts/package.py
 ```
 
-测试不需要外部模型密钥。为事务、身份校验、证据、恢复与安装失败补充有意义的测试，保持 CLI/MCP 共用核心，不提交作者作品和生成缓存。修改版本时同步 pyproject.toml、plugin.json 和 src/novel_weaver/__init__.py，更新 CHANGELOG；打包会验证三处版本一致。
+测试不需要外部模型密钥。为事务、身份校验、证据、恢复与安装失败补充有意义的测试，保持 CLI/MCP 共用核心，不提交作者作品和生成缓存。修改版本时同步 pyproject.toml、.codex-plugin/plugin.json、uv.lock 中本项目版本和 src/novel_weaver/__init__.py，更新 CHANGELOG；打包会验证项目、插件清单与运行时版本一致，锁文件检查验证依赖元数据。
 
 PR 请说明具体问题、改动后行为和验证结果。贡献按本项目 MIT 许可提供。交流遵守[行为准则](CODE_OF_CONDUCT.md)，安全问题见 [SECURITY](SECURITY.md)。

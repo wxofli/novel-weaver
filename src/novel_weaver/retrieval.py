@@ -209,6 +209,47 @@ def search(book, request):
     return {"hits": result, "coverage_chapter": chapter if request.scope == "canon" else None}, warnings
 
 
+def entity_candidates(book, request):
+    """Resolve only names introduced by the requested chapter; never guess IDs."""
+    chapter = coverage(book, request.chapter)
+    query = unicodedata.normalize("NFKC", request.query).casefold().strip()
+    require(bool(query), "EMPTY_QUERY", "Supply a nonblank entity name or ID", 2)
+    if request.pov:
+        person = "reader" if request.pov == "reader" else resolve_entity(book, request.pov, chapter=chapter, require_id=True)
+        if person != "reader":
+            historical_entity(book, person, chapter)
+        visible = set() if person == "reader" else {person}
+        for fact in fact_rows(book, chapter, person):
+            visible.update(x for x in (fact["subject"], fact["object"]) if x)
+        # The current memory model has no name-specific knowledge. Conservative
+        # ID-only matching avoids turning a global alias dictionary into a leak.
+        candidates = [{"id": value, "match": "id"} for value in sorted(visible) if value == request.query
+                      and (not request.kind or historical_entity(book, value, chapter).get("kind", "character") == request.kind)]
+        return {"candidates": candidates, "resolved_id": candidates[0]["id"] if candidates else None,
+                "ambiguous": False, "truncated": False, "chapter": chapter, "view": "pov", "names_available": False}
+    nodes = {}
+    for row in book.db.execute("SELECT l.delta,s.chapter FROM ledger l JOIN sources s ON s.id=l.source_id WHERE l.valid=1 ORDER BY l.seq"):
+        if row["chapter"] is not None and row["chapter"] > chapter:
+            continue
+        for node in json.loads(row["delta"]).get("entities", []):
+            old = nodes.get(node["id"], {})
+            nodes[node["id"]] = dict(node, aliases=sorted(set(node.get("aliases", [])) | set(old.get("aliases", []))))
+    candidates = []
+    for node in nodes.values():
+        if request.kind and node.get("kind", "character") != request.kind:
+            continue
+        labels = [node["id"], node["name"], *node.get("aliases", [])]
+        normalized = [unicodedata.normalize("NFKC", s).casefold() for s in labels]
+        exact = query in normalized
+        if exact or any(query in label for label in normalized):
+            candidates.append(dict(node, match="exact" if exact else "partial"))
+    candidates.sort(key=lambda x: (x["match"] != "exact", x["id"]))
+    exact = [c for c in candidates if c["match"] == "exact"]
+    return {"candidates": candidates[:request.limit], "resolved_id": exact[0]["id"] if len(exact) == 1 else None,
+            "ambiguous": len(exact) > 1 or (not exact and len(candidates) > 1),
+            "truncated": len(candidates) > request.limit, "chapter": chapter, "view": "author"}
+
+
 def graph(book, request):
     chapter = coverage(book, request.chapter)
     entity = resolve_entity(book, request.entity, chapter=chapter, require_id=bool(request.pov)) if request.entity else None
@@ -385,7 +426,10 @@ def build_context(book, request):
         payload["draft"] = _draft_reference(book, request.draft_id, chapter)
     if limited:
         payload["knowledge"][request.pov] = {"known": []}
-    require(len(dumps(payload)) <= request.budget_chars, "BUDGET_EXCEEDED", "Scene brief and required metadata exceed the context budget; shorten the brief or increase the budget")
+    minimum = len(dumps(payload))
+    if minimum > request.budget_chars:
+        raise NovelError("BUDGET_EXCEEDED", "Scene brief and required metadata exceed the context budget; shorten the brief or increase the budget",
+                         details={"minimum_required_chars": minimum, "provided_chars": request.budget_chars})
     seeds = context_seeds(book, request, cutoff, query)
     warnings = []
     if limited:

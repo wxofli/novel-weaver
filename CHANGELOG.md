@@ -2,7 +2,27 @@
 
 ## Unreleased
 
-Changes after the 0.1.5 preview will be recorded here.
+Changes after the 0.1.6 preview will be recorded here.
+
+## 0.1.6 — Atomic batch revisions and leaner tool workflows
+
+- Add resumable candidate batch revisions with ordered suffix extraction and atomic canon/memory commit; retain revision, context, review, hash and evidence checks.
+- Add temporal entity ID resolution with ambiguity and conservative POV boundaries.
+- Reduce repeat reads through explicit conditional source reads and bounded next-source content in replay responses.
+- Advertise conditional input rules and a typed response envelope; return consistent, input-safe validation errors with actionable field/budget details.
+- Add isolated transaction/regression tests, aggregate-only historical trace analysis and a synthetic replay benchmark. These source changes are not installed into existing book sessions automatically.
+
+### 验证与收益
+
+- 本地完整回归 146 项通过；10 个 skill 校验、文档引用和插件打包检查通过。
+- 依据历史的 16 次修订顺序，在隔离合成的 75 章作品上运行真实接口：语义提取从 376 降至 75 章次（减少 80.05%），调用从 1,176 降至 141 次（减少 88.01%），最终正文哈希与事实图一致。
+- 上述对照同时包含合批和减少往返，不代表真实创作的 token 费用或文学质量提升。候选校验内部仍会重建前缀；完整口径见 docs/optimization-verification.md。
+
+### 兼容与升级
+
+- 原单章工作流保持可用；批量流程复用现有存储，无数据库迁移。只有实际提供新 schema 的运行时才可调用新增工具和字段。
+- 旧运行时不认识活动 revision_batch 任务；完成或中止该任务后再考虑降级。采纳授权、独立审查条件和证据校验继续保留。
+- 发布不会自动安装、更新正在使用的插件或改写任何作品；已有创作会话可继续使用原版本。
 
 ## 0.1.5 — Writing, reading and editorial review
 

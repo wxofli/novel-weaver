@@ -327,7 +327,8 @@ def test_mcp_registers_shared_typed_request_schema():
         assert set(model_schema["properties"]) == set(ACTION_MODELS[tool.name].model_fields)
         output_schema = tool.output_schema if hasattr(tool, "output_schema") else tool.outputSchema
         assert output_schema["type"] == "object"
-        assert output_schema["additionalProperties"] is True
+        assert output_schema["additionalProperties"] is False
+        assert {"status", "data", "error", "revision", "next_actions"} <= set(output_schema["required"])
 
 
 def test_mcp_tool_annotations_describe_read_write_and_provider_effects():
@@ -335,6 +336,8 @@ def test_mcp_tool_annotations_describe_read_write_and_provider_effects():
     from novel_weaver import mcp_server
 
     expected = {
+        "revision_batch": (False, True, True, False),
+        "entity_resolve": (True, True, False, False),
         "book_init": (False, True, False, False),
         "book_status": (True, True, False, False),
         "book_import": (False, True, False, False),
@@ -397,8 +400,10 @@ def test_mcp_rejects_unknown_request_fields_before_core(monkeypatch):
     calls = []
     monkeypatch.setattr(mcp_server, "execute", lambda *args: calls.append(args))
     server = mcp_server.build_server()
-    with pytest.raises(Exception, match="[Ee]xtra"):
-        asyncio.run(server.call_tool("search", {"request": {"query": "q", "surprise": True}}))
+    output = asyncio.run(server.call_tool("search", {"request": {"query": "q", "surprise": True}}))
+    result = getattr(output, "structured_content", getattr(output, "structuredContent", None))
+    assert result["error"]["code"] == "INVALID_INPUT"
+    assert result["error"]["details"]["issues"][0]["type"] == "extra_forbidden"
     assert calls == []
 
 

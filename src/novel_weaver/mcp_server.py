@@ -3,14 +3,17 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Annotated, Any
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from .schemas import ACTION_MODELS
+from .schemas import ACTION_MODELS, ResponseEnvelope
+from .errors import NovelError, error_envelope, validation_error
 
 
 DESCRIPTIONS = {
+    "revision_batch": "Prepare, sequentially stage, resume or abort a multi-chapter revision; commit only a fully validated suffix atomically. Staging leaves canon unchanged. Commit requires author authorization.",
+    "entity_resolve": "Find historical entity IDs by known name or alias before graph queries. Returns ambiguity, never guesses; POV permits visible IDs only, without names.",
     "book_init": "Initialize a book project and its UUID. Requires an explicit project, title and operation_id.",
     "book_status": "Read revision, chapter and memory progress, and pending work. Use brief=true to skip projection and index scans.",
     "book_import": "Preview or start an explicit chapter import. Preview the mapping before starting it.",
@@ -28,8 +31,8 @@ DESCRIPTIONS = {
     "doctor_check": "Read book health, source and projection consistency, and recovery suggestions.",
     "doctor_repair": "Repair recoverable derived book state using authoritative storage.",
 }
-READ_ONLY_ACTIONS = frozenset({"book_status", "source_get", "search", "graph_query", "index_status", "doctor_check"})
-DESTRUCTIVE_ACTIONS = frozenset({"source_accept", "memory_sync", "index_rebuild", "doctor_repair"})
+READ_ONLY_ACTIONS = frozenset({"book_status", "source_get", "search", "graph_query", "index_status", "doctor_check", "entity_resolve"})
+DESTRUCTIVE_ACTIONS = frozenset({"source_accept", "memory_sync", "index_rebuild", "doctor_repair", "revision_batch"})
 # Context assembly also searches passages and may use configured providers.
 OPEN_WORLD_ACTIONS = frozenset({"context_build", "search", "index_update", "index_rebuild"})
 
@@ -68,15 +71,35 @@ def _handler(action: str, request_model: type[BaseModel]):
 
     call.__name__ = action
     call.__doc__ = DESCRIPTIONS.get(action, action.replace("_", " "))
-    call.__annotations__ = {"request": request_model, "return": Annotated[CallToolResult, dict[str, Any]]}
+    call.__annotations__ = {"request": request_model, "return": Annotated[CallToolResult, ResponseEnvelope]}
     return call
 
 
 def build_server():
-    server_class = _server_class()
-    from mcp.types import ToolAnnotations
+    base_class = _server_class()
+    from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
-    server = server_class(
+    class EnvelopeServer(base_class):
+        async def call_tool(self, name, arguments, context=None):
+            error = None
+            if name in ACTION_MODELS and (not isinstance(arguments, dict) or set(arguments) != {"request"}):
+                error = NovelError("INVALID_INPUT", "Tool arguments must contain exactly one request object", 2)
+            else:
+                try:
+                    # Validate here as well as in the SDK/core so SDK-wrapped input
+                    # errors use the same safe envelope as CLI and direct calls.
+                    if name in ACTION_MODELS:
+                        ACTION_MODELS[name].model_validate(arguments["request"])
+                    if context is None:
+                        return await super().call_tool(name, arguments)
+                    return await super().call_tool(name, arguments, context)
+                except ValidationError as exc:
+                    error = validation_error(exc)
+            result = error_envelope(error)
+            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
+                                  structuredContent=result, isError=True)
+
+    server = EnvelopeServer(
         "Novel Weaver",
         instructions="Use the typed request object for each tool. Authoritative book writes require explicit project, book_id and operation_id. Use book_status and context_build to resume a book workflow; never index ordinary conversation as book memory.",
     )

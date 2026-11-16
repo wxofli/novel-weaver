@@ -10,11 +10,13 @@ from typing import Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
 
-from .errors import NovelError
+from .errors import NovelError, error_envelope, validation_error
 from .schemas import ACTION_MODELS
 
 
 COMMANDS = {
+    "revision": {"batch": "revision_batch"},
+    "entity": {"resolve": "entity_resolve"},
     "book": {"init": "book_init", "status": "book_status", "import": "book_import"},
     "source": {"get": "source_get", "save": "source_save", "accept": "source_accept"},
     "context": {"build": "context_build"},
@@ -181,7 +183,9 @@ def main(argv: list[str] | None = None) -> int:
         return _output(execute(action, payload), compact)
     except SystemExit as exc:
         return int(exc.code or 0)
-    except (UsageError, ValidationError, json.JSONDecodeError, OSError, UnicodeError) as exc:
+    except ValidationError as exc:
+        return _output(error_envelope(validation_error(exc)), compact)
+    except (UsageError, json.JSONDecodeError, OSError, UnicodeError) as exc:
         return _output(_error("invalid_request", str(exc)), compact)
     except NovelError as exc:
         return _output(_error(exc.code, exc.message, exc.exit_code, exc.retryable), compact)

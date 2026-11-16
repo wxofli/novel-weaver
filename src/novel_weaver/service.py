@@ -7,13 +7,13 @@ import time
 
 from pydantic import ValidationError
 
-from .errors import NovelError, require
+from .errors import NovelError, error_envelope, require, validation_error
 from .memory import apply_delta, reset_graph, validate_delta
 from .schemas import ACTION_MODELS, MemoryDelta
 from .store import Book, digest, discover, dumps, initialize, uid
 
 
-WRITE_ACTIONS = {"source_save", "source_accept", "memory_stage", "book_import", "index_update", "index_rebuild", "doctor_repair", "memory_sync"}
+WRITE_ACTIONS = {"source_save", "source_accept", "memory_stage", "book_import", "index_update", "index_rebuild", "doctor_repair", "memory_sync", "revision_batch"}
 
 
 def envelope(book=None, data=None, warnings=None, status="ok", next_actions=None):
@@ -161,6 +161,7 @@ def source_accept(book, r):
 def memory_sync(book, r):
     job = book.active_job()
     require(job is not None and job["id"] == r.job_id, "SYNC_JOB_NOT_ACTIVE", "No matching active synchronization job", 4)
+    require(job["kind"] != "revision_batch", "REVISION_BATCH_REQUIRED", "Resume this job with revision_batch", 4)
     manifest = json.loads(job["manifest"])
     source = book.source(manifest[job["position"]])
     for sid in manifest:
@@ -168,7 +169,10 @@ def memory_sync(book, r):
         row = book.db.execute("SELECT source_id FROM accepted WHERE logical_id=?", (pinned["logical_id"],)).fetchone()
         require(row is not None and row[0] == sid, "SYNC_MANIFEST_CHANGED", "Accepted source changed during synchronization", 4)
     if r.mode == "next":
-        return {"job_id": job["id"], "next_source_version": source["id"], "source_hash": source["hash"], "chapter": source["chapter"], "position": job["position"], "total": len(manifest)}
+        data = {"job_id": job["id"], "next_source_version": source["id"], "source_hash": source["hash"], "chapter": source["chapter"], "position": job["position"], "total": len(manifest)}
+        if r.include_source:
+            data["source"] = source_page(source, max_chars=r.max_chars)
+        return data
     require(r.source_version == source["id"] and r.delta is not None, "SYNC_ORDER", "Read and extract the job's next immutable source", 4)
     require(r.base_revision == book.revision, "REVISION_CONFLICT", "Memory changed; retry at current revision", 4)
     add_ledger(book, source, r.delta)
@@ -176,7 +180,13 @@ def memory_sync(book, r):
     book.db.execute("UPDATE jobs SET position=?,status=? WHERE id=?", (position, "complete" if position == len(manifest) else "active", job["id"]))
     book.set_meta("frontier", source["chapter"])
     book.bump()
-    return {"job_id": job["id"], "position": position, "total": len(manifest), "memory_frontier": book.frontier()}
+    data = {"job_id": job["id"], "position": position, "total": len(manifest), "memory_frontier": book.frontier()}
+    if position < len(manifest):
+        following = book.source(manifest[position])
+        data.update(next_source_version=following["id"], source_hash=following["hash"], chapter=following["chapter"])
+        if r.include_source:
+            data["source"] = source_page(following, max_chars=r.max_chars)
+    return data
 
 
 def split_manuscript(text, split_rule=None):
@@ -266,7 +276,11 @@ def status(book, *, brief=False):
     job = book.active_job()
     if job:
         manifest = json.loads(job["manifest"])
-        job = {"job_id": job["id"], "kind": job["kind"], "position": job["position"], "total": len(manifest), "next_source_version": manifest[job["position"]]}
+        if job["kind"] == "revision_batch":
+            from .revisions import progress
+            job = progress(book, job, manifest)
+        else:
+            job = {"job_id": job["id"], "kind": job["kind"], "position": job["position"], "total": len(manifest), "next_source_version": manifest[job["position"]]}
     data = {"project": str(book.root), "title": book.meta("title"), "latest_chapter": book.latest_chapter(),
             "memory_frontier": book.frontier(), "active_job": job, "pending_work": pending,
             "awaiting_author": bool(pending) and all(not p["needs"] for p in pending)}
@@ -289,7 +303,9 @@ def index_status(book):
 def next_actions(data):
     actions = []
     if data.get("active_job"):
-        actions.append({"action": "memory.sync", **data["active_job"]})
+        job = data["active_job"]
+        actions.append({"action": "revision.batch" if job["kind"] == "revision_batch" else "memory.sync", **job})
+        return actions
     for pending in data.get("pending_work", []):
         for need in pending["needs"]:
             actions.append({"action": need, "source_version": pending["source_version"], "run_id": pending["run_id"]})
@@ -298,9 +314,26 @@ def next_actions(data):
     return actions
 
 
+def source_page(source, *, offset=0, max_chars=12000, if_none_match=None):
+    end = min(len(source["content"]), offset + max_chars)
+    data = {"source_version": source["id"], "source_hash": source["hash"], "kind": source["kind"],
+            "chapter": source["chapter"], "total_chars": len(source["content"]), "offset": offset,
+            "next_offset": end if end < len(source["content"]) else None}
+    if if_none_match == source["hash"]:
+        data["not_modified"] = True
+    else:
+        data["content"] = source["content"][offset:end]
+    return data
+
+
 def handle(book, action, r):
     from . import retrieval
     warnings = []
+    if action == "revision_batch":
+        from .revisions import execute_batch
+        return execute_batch(book, r), warnings
+    if action == "entity_resolve":
+        return retrieval.entity_candidates(book, r), warnings
     if action == "source_save":
         return source_save(book, r), warnings
     if action == "memory_stage":
@@ -313,10 +346,7 @@ def handle(book, action, r):
         return book_import(book, r), warnings
     if action == "source_get":
         source = book.source(r.source_version)
-        end = min(len(source["content"]), r.offset + r.max_chars)
-        return {"source_version": source["id"], "source_hash": source["hash"], "kind": source["kind"],
-                "chapter": source["chapter"], "content": source["content"][r.offset:end], "total_chars": len(source["content"]),
-                "next_offset": end if end < len(source["content"]) else None, "offset": r.offset}, warnings
+        return source_page(source, offset=r.offset, max_chars=r.max_chars, if_none_match=r.if_none_match), warnings
     if action == "search":
         return retrieval.search(book, r)
     if action == "graph_query":
@@ -356,7 +386,7 @@ def execute(action: str, payload: dict) -> dict:
             result.update(book_id=data["book_id"], revision=0)
             return result
         root = Path(request.project).resolve() if request.project else discover()
-        write = action in WRITE_ACTIONS and not (action == "memory_sync" and request.mode == "next")
+        write = action in WRITE_ACTIONS and not (action in {"memory_sync", "revision_batch"} and request.mode == "next")
         context_ticket_required = action == "context_build" and request.task in {"write", "revise"}
         book = Book(root, request.book_id, readonly=not write and not context_ticket_required)
         if action == "context_build":
@@ -385,17 +415,17 @@ def execute(action: str, payload: dict) -> dict:
                 result = envelope(book, data, warnings)
                 if action == "source_save" and request.kind == "chapter":
                     result["next_actions"] = [{"action": a, "source_version": data["source_version"], "run_id": request.run_id} for a in ("memory.stage", "review")]
-                elif action in ("source_accept", "memory_sync", "book_import", "doctor_repair"):
+                elif action in ("source_accept", "memory_sync", "book_import", "doctor_repair", "revision_batch"):
                     state = status(book)
                     result["next_actions"] = next_actions(state)
                 book.db.execute("INSERT INTO operations VALUES (?,?,?)", (request.operation_id, fingerprint, dumps(result)))
-        warnings = book.flush_projections() if action in ("source_save", "source_accept", "book_import", "doctor_repair") else []
+        warnings = book.flush_projections() if action in ("source_save", "source_accept", "book_import", "doctor_repair") or (action == "revision_batch" and request.mode == "commit") else []
         if warnings:
             result["warnings"].extend(warnings)
             result["status"] = "partial"
         return result
     except ValidationError as exc:
-        error = NovelError("INVALID_INPUT", str(exc), 2)
+        error = validation_error(exc)
     except NovelError as exc:
         error = exc
     except sqlite3.OperationalError as exc:
@@ -405,6 +435,4 @@ def execute(action: str, payload: dict) -> dict:
     finally:
         if book:
             book.close()
-    result = envelope()
-    result.update(status="error", error={"code": error.code, "message": error.message, "retryable": error.retryable, "exit_code": error.exit_code})
-    return result
+    return error_envelope(error)

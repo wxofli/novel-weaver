@@ -5,14 +5,19 @@ One Python core implements every operation; CLI and MCP use
 Pydantic classes in `novel_weaver.schemas.ACTION_MODELS`.
 
 Results contain schema_version=1, status, book_id, revision, data, warnings,
-error, next_actions. Errors include code, message, retryable and exit_code.
+error, next_actions. Errors include code, message, retryable, exit_code and details.
+MCP advertises a typed top-level response envelope; data remains action-specific.
+Input conditions (chapter/review saves, fact object/value, replay modes) are
+also expressed in JSON Schema. INVALID_INPUT details contain safe field issues,
+without submitted manuscript values; budget errors report the required minimum.
 MCP tools take a typed `request` object. CLI common options are --project,
 --book-id, --operation-id, --run-id, --input FILE|- and --json. CLI flags
 override JSON only when explicitly supplied; unknown fields are errors.
 
 CLI commands map to ACTION_MODELS: book init/status/import; source get/save/accept;
 context build; memory stage/sync; search; graph query; index status/update/rebuild;
-doctor check/repair. Additional local commands: hook run EVENT; mcp serve.
+doctor check/repair; revision batch; entity resolve. Additional local commands:
+hook run EVENT; mcp serve.
 
 Core writes require explicit project, book_id, operation_id (book_init creates
 its identity). Source chapter saves require chapter and fresh context_id;
@@ -21,6 +26,22 @@ Review is saved with kind=review and the structured Review object. Memory
 stage accepts MemoryDelta. memory_sync next/apply shares the sync-job contract:
 only an active job's next accepted source can be replayed. Source get reads
 immutable DB versions, not mutable Markdown projections.
+
+Source get supports explicit if_none_match: omit content only for a matching
+source hash when the caller already holds that exact page. Sync next/apply can
+include a bounded next-source page, preserving offsets and hashes. This is not
+an implicit persistent cache. Entity resolve returns historically valid name/alias
+candidates and ambiguity; POV matching exposes only visible IDs, never aliases.
+
+Revision batch prepare freezes a baseline revision/fingerprint, exact replacement
+hashes/reviews, and the complete affected suffix. Apply validates each freshly
+extracted delta against the staged candidate prefix inside a rolled-back savepoint.
+Next resumes persisted progress; context returns bounded candidate author facts.
+Commit revalidates bindings and atomically replaces all accepted pointers, ledger
+and graph, incrementing revision once. Abort leaves canon unchanged. Existing
+jobs/batches tables are reused; older runtimes cannot resume this new job kind.
+Single-chapter APIs remain available. See the [batch workflow](../skills/novel/references/batch-revision.md)
+and [measured optimization results](optimization-verification.md).
 
 CLI JSON stdout is a single envelope; stderr contains diagnostics. Hooks are
 read-only and output official hook JSON instead of a CLI envelope. Hook run

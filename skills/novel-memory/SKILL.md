@@ -5,7 +5,7 @@ description: 查询小说人物、关系、事实、时间线、角色知情与�
 
 # 记忆查询与同步
 
-先按[公共协议](../novel/references/workflow.md#调用与身份)读取 `book_status`，以 `memory_frontier` 为可靠覆盖边界。普通问答优先 `search(scope="canon",chapter=问题发生章)` 和 `graph_query(mode="entity"|"neighbors"|"path"|"timeline",entity=稳定ID,chapter=历史章,pov=需要时)`；邻接深度最多 2。名字可能有歧义时先消歧，不跨书合并同名人物。
+先按[公共协议](../novel/references/workflow.md#调用与身份)读取 `book_status`，以 `memory_frontier` 为可靠覆盖边界。普通问答优先 `search(scope="canon",chapter=问题发生章)` 和 `graph_query(mode="entity"|"neighbors"|"path"|"timeline",entity=稳定ID,chapter=历史章,pov=需要时)`；邻接深度最多 2。不知道稳定 ID 时，若工具可用，先 `entity_resolve(query=原名或别名,chapter=历史章)`；唯一精确匹配才返回 `resolved_id`，歧义时结合原文消歧，不轮流猜前缀、不跨书合并同名人物。有限视角的 resolver 同样只接受可见 ID 匹配，不返回名字映射。
 
 图查询和 `context_build` 的 `pov` 只能传同书稳定实体 ID 或 `reader`，不能用角色名/别名解析，以免身份映射提前泄漏；不带 POV 的历史名字/别名查询只使用指定章已引入的字典。旧信念保留到知情更新或 `rejects`，角色可能仍相信与当前作者事实不同的内容。
 
@@ -23,12 +23,12 @@ description: 查询小说人物、关系、事实、时间线、角色知情与�
 
 ## 恢复一个活动同步任务
 
-读取[同步与恢复](../novel/references/workflow.md#同步与恢复)。只处理 `book_status.active_job` 给出的 `job_id`，一次一个源，顺序不可并行：
+读取[同步与恢复](../novel/references/workflow.md#同步与恢复)。`active_job.kind="revision_batch"` 时改走[批量修订](../novel/references/batch-revision.md)，不发给 `memory_sync`。其他任务只处理 `book_status.active_job` 给出的 `job_id`，一次一个源，顺序不可并行：
 
-1. `memory_sync(mode="next",job_id=活动任务)` 取得 `next_source_version`、哈希与章节。
-2. `source_get` 读取该不可变源的全部分页，保留全源偏移；不要读投影，不从摘要推断缺失原文。
+1. `memory_sync(mode="next",job_id=活动任务,include_source=true)` 取得下一源和首段正文；宿主未提供该字段时按旧接口另取正文。
+2. 沿 `source.next_offset` 用 `source_get` 补齐分页，保留全源偏移；首段或同版本缓存确实仍可读取时不重复获取。不要读投影，不从摘要推断缺失原文。
 3. 模型根据当前已重放状态提取该源的完整 `MemoryDelta`，核实证据、实体引用与历史关系。
-4. `memory_sync(mode="apply",job_id,source_version=刚取得的源,base_revision=当前revision,delta)`；使用新的操作 ID，保留响应 revision，然后读取状态/下一源。
+4. `memory_sync(mode="apply",job_id,source_version=刚取得的源,base_revision=当前revision,delta,include_source=true)`；使用新的操作 ID，保留响应 revision。响应已含下一源时直接继续，完成、恢复或冲突时再核对状态，无需每章额外调用 next/status。
 5. 直到任务完成，确认 `memory_frontier` 追上目标并检查索引/投影待办。中断后从同一任务的下一源恢复，不重新启动导入或重新采纳章节。
 
 导入确认或正文/设定/决定采纳已经授权这些已采纳源的记忆重建，不另问一次“要不要记忆”，也不逐章重问作者采纳。设定/决定替换可能从第 1 章重放全部正文，每次接受后都检查 `job_id` 与 `book_status.active_job`，不要只处理导入和旧章修订任务。活动任务冻结新的导入与采纳；如果原文/manifest 改变、版本冲突或证据失败，保持已提交进度，报告具体错误并读取状态恢复，不绕过校验。

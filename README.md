@@ -4,17 +4,19 @@
 
 让 Codex 帮你构思、规划、写作和审查长篇小说，记住**哪些事已发生、谁知道什么、证据在哪一版原文中**。每本书独立保存资料；正文先存为候选稿，经作者明确授权采纳后才进入正史并更新记忆。
 
-**v0.1.5 是预览版。** 支持 TXT / Markdown 导入、本地证据记忆、检索、续写和跨文化改编工作流。有限视角写稿使用该视角能掌握的线索，审稿可以按需查作者设定和原文。写作与语义提取由 Codex 宿主模型完成，请审阅候选稿。[验收记录](docs/verification.md)
+**v0.1.6 是预览版。** 支持 TXT / Markdown 导入、本地证据记忆、检索、续写和跨文化改编工作流。有限视角写稿使用该视角能掌握的线索，审稿可以按需查作者设定和原文。写作与语义提取由 Codex 宿主模型完成，请审阅候选稿。[验收记录](docs/verification.md)
+
+v0.1.6 增加批量修订统一重放、实体 ID 消歧、减少重复读取及结构化错误；见[验证结果与限制](docs/optimization-verification.md)。发布不会自动更新已安装插件或迁移作品；正在进行的书稿任务可继续使用原版本。
 
 ## 安装
 
-需要支持插件与 hooks 的 Codex、Python 3.11+、[uv](https://docs.astral.sh/uv/getting-started/installation/)，以及可访问 GitHub 和 Python 包源的网络。下载并解压[发布页](https://github.com/wxofli/novel-weaver/releases/tag/v0.1.5)里的插件 ZIP，在解压目录运行：
+需要支持插件与 hooks 的 Codex、Python 3.11+、[uv](https://docs.astral.sh/uv/getting-started/installation/)，以及可访问 GitHub 和 Python 包源的网络。下载并解压[发布页](https://github.com/wxofli/novel-weaver/releases/tag/v0.1.6)里的插件 ZIP，在解压目录运行：
 
 ```sh
 uv run --no-project python scripts/install.py
 ```
 
-默认从 `wxofli/novel-weaver` 的 `v0.1.5` 标签注册来源，通过 Codex 安装插件并准备运行环境。加 `--dry-run` 可先查看计划。已安装旧版的用户请先按[更新说明](docs/getting-started.md#更新与卸载)更换版本来源。
+默认从 `wxofli/novel-weaver` 的 `v0.1.6` 标签注册来源，通过 Codex 安装插件并准备运行环境。加 `--dry-run` 可先查看计划。已安装旧版的用户请先按[更新说明](docs/getting-started.md#更新与卸载)更换版本来源。
 
 使用解压后的 ZIP，在解压目录运行：
 
@@ -28,7 +30,7 @@ uv run --no-project python scripts/install.py --local .
 
 也可以把这段话复制给 Codex：
 
-> 请帮我安装 https://github.com/wxofli/novel-weaver 的 v0.1.5 插件。先检查 Codex 和 uv，再按仓库 README 运行安装器，验证安装目录中的工具能启动，最后提示我审阅 hooks。如果我提供的是本地解压包，请使用 `--local` 加上该目录。
+> 请帮我安装 https://github.com/wxofli/novel-weaver 的 v0.1.6 插件。先检查 Codex 和 uv，再按仓库 README 运行安装器，验证安装目录中的工具能启动，最后提示我审阅 hooks。如果我提供的是本地解压包，请使用 `--local` 加上该目录。
 
 ## 写第一本书
 
@@ -44,7 +46,7 @@ uv run --no-project python scripts/install.py --local .
 
 `novel-read` 支持通读、分批拆书和阅读期待台账；`novel-review` 区分单章、章段与完结交稿审查。创作规则将事实核验与阅读体验分开，不强制爽点频率或把后台确认写进正文。可说：“按当前正式版本分批读完，检查重复场景、人物选择和结局兑现，给出证据与最小修法。”
 
-规则与对照验证见[编辑验证](docs/editorial-verification.md)。v0.1.5 不更改初始化器，也不会自动迁移已有作品；作品约定的可选补充见[模板](skills/novel/assets/book-agents.md)，后端扩展见[未实现方案](docs/editorial-backend-roadmap.md)。
+规则与对照验证见[编辑验证](docs/editorial-verification.md)。本版不更改初始化器，也不会自动迁移已有作品；作品约定的可选补充见[模板](skills/novel/assets/book-agents.md)，后端扩展见[实现进度与后续方案](docs/editorial-backend-roadmap.md)。
 
 ## 跨文化改编
 

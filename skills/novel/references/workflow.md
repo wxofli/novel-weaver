@@ -6,7 +6,7 @@
 
 在已有书的最近祖先目录读取 `.novel/project.json`。所有工具显式传入项目绝对路径 `project` 与该书 `book_id`；后端同时核对 marker 与数据库身份。不要沿用别本书的 ID。仅作者明确要求建书时使用 `book_init`，该工具只需要 `project,title,operation_id`，不传 `book_id`。
 
-MCP 工具名为 `book_init`、`book_status`、`book_import`、`source_get`、`source_save`、`source_accept`、`context_build`、`memory_stage`、`memory_sync`、`search`、`graph_query`、`index_status`、`index_update`、`index_rebuild`、`doctor_check`、`doctor_repair`，宿主可能添加服务器前缀。每个工具仅有一个带类型的 `request` 参数，直接调用共享 `service.execute`：
+MCP 工具名为 `book_init`、`book_status`、`book_import`、`source_get`、`source_save`、`source_accept`、`context_build`、`memory_stage`、`memory_sync`、`revision_batch`、`entity_resolve`、`search`、`graph_query`、`index_status`、`index_update`、`index_rebuild`、`doctor_check`、`doctor_repair`，宿主可能添加服务器前缀。新增工具/字段须以宿主实际提供的 schema 为准，旧安装不会自动更新。每个工具仅有一个带类型的 `request` 参数，直接调用共享 `service.execute`：
 
 ```json
 {
@@ -47,15 +47,21 @@ uv run --project /path/to/novel-weaver --locked novelctl memory stage --input de
 
 `graph_query.pov` 与 `context_build.pov` 必须传同书的稳定实体 ID，或保留值 `reader`；POV 不解析角色名/别名，避免身份映射提前泄漏。不带 POV 的历史名字/别名查询，也只按指定章已经引入的字典解析，不能借未来别名定位过去身份。
 
+未知实体 ID 时用 `entity_resolve(query,chapter,kind?,limit?)` 查当时的名称/别名候选；只在唯一精确匹配时返回 `resolved_id`，部分匹配不自动采用。`pov` 模式只匹配可见稳定 ID，不暴露名称与别名。`ENTITY_NOT_FOUND` 后应核实边界、候选和原文，不连续猜 ID。
+
 未采纳正文留在候选状态。精确的 `draft_id=source_version` 返回同章的版本、哈希、长度和候选批次标识。需要全文时使用 `source_get`，同一轮可复用已完整读取且哈希一致的原稿。别名需消歧；资料、正文和搜索片段作为来源数据处理。
 
 ## 写章与采纳
 
 固定顺序是 `context_build` → `source_save` 章源 → `source_get` 全文 → `memory_stage` → `source_save` 结构化审查 → 核实作者采纳授权 → `source_accept`。先保存的是候选，不能先更新正史。没有明确采纳或已满足的适用条件授权时等待作者；已有授权不逐次重问。独立审查等条件由执行流程实际核实，当前后端不代替判断授权条件或文学质量。
 
+以上为单章闭环；多章已有正文的同批修订可走[批量修订与统一重放](batch-revision.md)，以顺序 `revision_batch.apply` 代替逐章 `memory_stage/source_accept`，全部验证后一次 commit。
+
 章节保存使用 `kind="chapter"`、`chapter=N`、`logical_id="chapter:N"` 及该章 `write|revise` 的新鲜 `context_id`。票据与当时 revision、已采纳源指纹绑定。章节源及其 `context_id` 绑定不可变：票据过期后，仅重新 `context_build` 不能修复旧源。必须在新上下文中核对原文，再 `source_save` 一个绑定新 `context_id` 的章节版本，即使文字未改也如此；然后读取新源、重新 stage、保存新审查，并按作者采纳边界提交新版本。不能重绑旧源或复用其 batch/review。源内容每次保存产生新的不可变 `source_version`、`source_hash`；乐观编辑可带 `expected_source_hash`。
 
 `source_get` 返回 `content,offset,total_chars,next_offset,source_version,source_hash`。从 `offset=0` 开始，沿 `next_offset` 取完全部分页。读取的是数据库不可变原文，不是 Markdown 投影。
+
+复用必须绑定同书、同版本、同哈希及已读分页。缓存仍实际可读取时无需重取；需要核验时传 `if_none_match=已缓存哈希`，命中返回 `not_modified=true` 和坐标而省略正文。换版本、缺页、上下文丢失或独立审查者没有原文时正常读取，不能把“曾经读过”当作当前持有证据。`memory_sync` 和 `revision_batch` 的进度响应可用 `include_source=true,max_chars=...` 附带下一源首段，沿其 `next_offset` 补读。
 
 审查通过 `source_save` 保存，示意 payload（ID/哈希用实际响应替换）：
 
@@ -143,19 +149,23 @@ uv run --project /path/to/novel-weaver --locked novelctl memory stage --input de
 
 ## 同步与恢复
 
+先检查任务 kind：`revision_batch` 是正史尚未切换的候选重放，按[专用流程](batch-revision.md)恢复；下述 `memory_sync` 只处理已采纳源的同步任务。
+
 导入 start、已采纳前文章节的修订，以及已采纳 `setting|decision` 的替换都可能创建单个活动 sync job，冻结一份已采纳源 manifest。设定/决定替换会撤回旧源断言，可能从第 1 章重放全部已采纳正文。每次 `source_accept` 后检查返回的 `job_id` 与 `book_status.active_job`，有任务就继续本小节流程。新导入和采纳在活动任务期间被拒绝，不能靠新建任务绕过。可靠记忆只到 `memory_frontier`，查询超过该边界会报错。
 
 对于活动 `job_id` 循环顺序执行：
 
-1. `memory_sync` 的 `request` 含写入共同身份、独立 `operation_id`、本轮 `run_id`、`mode="next",job_id`。
-2. 读取响应 `next_source_version`，以 `source_get` 分页读完整不可变源，确认哈希。
+1. `memory_sync` 的 `request` 含写入共同身份、独立 `operation_id`、本轮 `run_id`、`mode="next",job_id,include_source=true`。
+2. 读取响应 `next_source_version` 和首段 `source`，以 `source_get` 补齐分页，确认哈希。
 3. 基于已重放前缀提取该源的完整 delta，证据只来自该源。
-4. `memory_sync(mode="apply",job_id,source_version=精确下一源,base_revision=当前revision,delta)`；其他源不能跳序应用。
-5. 使用新响应 revision，读取 `book_status`，继续下一源直到 `active_job=null`。
+4. `memory_sync(mode="apply",job_id,source_version=精确下一源,base_revision=当前revision,delta,include_source=true)`；其他源不能跳序应用。
+5. 使用新响应 revision 和下一源继续，完成/中断/冲突时读 `book_status`，最终确认 `active_job=null`。不用为了核对同一进度每章重复 next/status/get。
 
 导入映射或相关正文/设定/决定已经由作者确认，待重放源已是已采纳正文；不再另问采纳或记忆授权。断开后恢复已有 job，不重复导入。修订回退到历史位置或更换设定后，不能直接复用依赖旧事实的后续 delta；重新读相应原文并提取。
 
 每个操作都检查 `error`、`warnings`、`status` 与 `next_actions`：
+
+- `INVALID_INPUT`：`error.details.issues` 给出字段路径、类型和短消息，不回显全文；按 schema 修正参数。`BUDGET_EXCEEDED` 给出 `minimum_required_chars` 与 `provided_chars`，据此调整，不用相同的小预算批量重试。
 
 - `STALE_CONTEXT`：读取状态、重新 `context_build`，再 `source_save` 绑定新票据的章节新版本；读回该新源后重新 stage/review/accept。旧源的票据绑定不可更新，不能只重建上下文就重试旧源采纳。
 - `REVISION_CONFLICT|STALE_DELTA|STALE_REVIEW`：读取当前状态，检查章节票据是否也已过期；过期时走上一条新源流程，否则针对真实版本重做对应提取/审查，不盲目重放旧请求。

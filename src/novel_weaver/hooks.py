@@ -63,7 +63,8 @@ def _session_card(status: dict, project: str, book_id: str) -> str:
              f"accepted_chapter={data.get('latest_chapter', 0)} memory_frontier={data.get('memory_frontier', 0)}"]
     if data.get("active_job"):
         job = data["active_job"]
-        lines.append(f"Memory synchronization pending ({job['position']}/{job['total']}).")
+        label = "Candidate revision staged; canon unchanged" if job.get("kind") == "revision_batch" else "Memory synchronization pending"
+        lines.append(f"{label} ({job['position']}/{job['total']}).")
     return "\n".join(lines)
 
 

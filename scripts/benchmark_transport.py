@@ -1,6 +1,7 @@
 """Aggregate-only, read-only transport and bounded-cache trace counterfactual."""
 import argparse
 import asyncio
+import importlib.util
 from collections import Counter
 from datetime import datetime
 import json
@@ -11,10 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from novel_weaver import mcp_server
 from novel_weaver.source_cache import SourcePageCache
 from novel_weaver.transport import tool_result
-try:
-    from scripts.analyze_traces import envelope, session_files
-except ModuleNotFoundError:
-    from analyze_traces import envelope, session_files
+_spec = importlib.util.spec_from_file_location("novel_weaver_trace_analysis", Path(__file__).with_name("analyze_traces.py"))
+_analysis = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_analysis)
+envelope, session_files = _analysis.envelope, _analysis.session_files
 
 
 def chars(value):

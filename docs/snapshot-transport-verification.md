@@ -1,6 +1,6 @@
 # 候选快照、schema 与返回内容的第二轮验证
 
-状态：优化完成后按作者要求准备 0.1.7 发布。发布不安装或修改主线程插件，未修改真实小说正文、记忆库、项目配置或 AGENTS.md。历史 traces 只读，原文不进入仓库；事务测试与性能实验使用隔离合成作品。
+状态：优化完成后按作者要求准备 0.1.8 发布。发布不安装或修改主线程插件，未修改真实小说正文、记忆库、项目配置或 AGENTS.md。历史 traces 只读，原文不进入仓库；事务测试与性能实验使用隔离合成作品。
 
 ## 实现与正确性边界
 
@@ -58,4 +58,4 @@ python scripts/benchmark_revisions.py --compare-snapshots --include-context --fa
 python scripts/benchmark_transport.py --session-db /path/to/state_5.sqlite --project /path/to/book --before 2026-11-16T02:30:30.633Z
 ```
 
-最后一条只读会话索引和日志，输出计数不输出原文；日志不是必要的测试依赖。优化完成时完整回归 **168 passed**（110.13 秒，1 条既有 jieba/pkg_resources 弃用提示）。10 个 skill 的 quick_validate、Markdown 引用/包内依赖测试及 git diff --check 均通过，隔离插件 ZIP 已确认包含新后端、缓存辅助库、benchmark 和报告。0.1.7 发布统一版本元数据，未新增依赖或安装插件；远端标签工作流通过 Windows/Linux、Python 3.11–3.13 矩阵后生成发布附件。
+最后一条只读会话索引和日志，输出计数不输出原文；日志不是必要的测试依赖。优化完成时完整回归 **168 passed**（110.13 秒，1 条既有 jieba/pkg_resources 弃用提示）。10 个 skill 的 quick_validate、Markdown 引用/包内依赖测试及 git diff --check 均通过，隔离插件 ZIP 已确认包含新后端、缓存辅助库、benchmark 和报告。0.1.8 发布统一版本元数据，未新增依赖或安装插件；远端标签工作流通过 Windows/Linux、Python 3.11–3.13 矩阵后生成发布附件。

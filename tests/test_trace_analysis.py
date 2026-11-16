@@ -1,11 +1,24 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 
 spec = importlib.util.spec_from_file_location("trace_analysis", Path(__file__).resolve().parents[1] / "scripts/analyze_traces.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+
+def test_transport_script_imports_outside_repo_with_isolated_python(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "scripts/benchmark_transport.py"
+    code = """import importlib.util,sys
+spec=importlib.util.spec_from_file_location('isolated_transport',sys.argv[1])
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert module.envelope({'structuredContent':{'schema_version':1}})=={'schema_version':1}
+"""
+    subprocess.run([sys.executable, "-I", "-c", code, str(script)], cwd=tmp_path, check=True, capture_output=True, text=True)
 
 
 def test_trace_analysis_deduplicates_and_separates_workflow_states(tmp_path):

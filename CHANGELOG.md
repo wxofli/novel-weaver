@@ -2,21 +2,22 @@
 
 ## Unreleased
 
-Changes after the 0.1.7 preview will be recorded here.
+Changes after the 0.1.8 preview will be recorded here.
 
-## 0.1.7 — Candidate snapshots and compact tool transport
+## 0.1.8 — Candidate snapshots and compact tool transport
 
 - Remove automatic schema title annotations while preserving actual fields, literals and validation constraints.
 - Persist disposable candidate-prefix snapshots with atomic cursor updates, corruption recovery and complete final evidence replay.
 - Add an opt-in MCP summary text mode; keep complete structured results and retain full-text compatibility by default.
 - Add an explicit bounded source-page cache for callers, snapshot/transport benchmarks and isolation/recovery tests. No installed plugin or book is updated automatically.
+- Make the trace benchmark import its sibling analyzer by file path, including isolated Python processes launched outside the repository.
 
 ### 验证与收益
 
-- 本地完整回归 168 项通过；另验证新进程直接恢复快照而无需重放。10 个 skill 校验、文档引用和插件打包检查通过。
+- 本地完整回归 169 项通过，包含仓库外隔离进程导入和新进程直接恢复快照而无需重放。10 个 skill 校验、文档引用和插件打包检查通过。
 - MCP 工具声明由 55,503 降至 44,949 字符（减少 19.02%），保留字段和全部校验条件。
 - 75 章、1,500 条事实的合成对照中，工具调用同为 216 次；增量应用 5,700 → 150 次，SQL 426,969 → 73,753 条，本地单次耗时 23.621 → 13.557 秒，最终五张记忆图表和正文哈希一致。轻负载不保证加速。
-- 对 5,991 个历史结果模拟精简返回，序列化字符减少 46.62%；有界缓存模拟可减少 239 次读取。以上不是实际模型 token 或费用降幅。完整口径见[验证报告](https://github.com/wxofli/novel-weaver/blob/v0.1.7/docs/snapshot-transport-verification.md)。
+- 对 5,991 个历史结果模拟精简返回，序列化字符减少 46.62%；有界缓存模拟可减少 239 次读取。以上不是实际模型 token 或费用降幅。完整口径见[验证报告](https://github.com/wxofli/novel-weaver/blob/v0.1.8/docs/snapshot-transport-verification.md)。
 
 ### 兼容与升级
 

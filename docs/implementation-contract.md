@@ -43,7 +43,7 @@ jobs/batches tables are reused; older runtimes cannot resume this new job kind.
 Single-chapter APIs remain available. See the [batch workflow](../skills/novel/references/batch-revision.md)
 and [measured optimization results](optimization-verification.md).
 
-Since 0.1.7, candidate graphs are restored into a separate in-memory
+Since 0.1.8, candidate graphs are restored into a separate in-memory
 SQLite connection from a disposable revision_snapshots table, created only on
 candidate apply/context. Cache bindings cover the book/job, baseline, cursor,
 manifest and prefix source/delta bytes. Blob checksum/format failures rebuild

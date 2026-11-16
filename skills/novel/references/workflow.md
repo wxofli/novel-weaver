@@ -63,6 +63,8 @@ uv run --project /path/to/novel-weaver --locked novelctl memory stage --input de
 
 复用必须绑定同书、同版本、同哈希及已读分页。缓存仍实际可读取时无需重取；需要核验时传 `if_none_match=已缓存哈希`，命中返回 `not_modified=true` 和坐标而省略正文。换版本、缺页、上下文丢失或独立审查者没有原文时正常读取，不能把“曾经读过”当作当前持有证据。`memory_sync` 和 `revision_batch` 的进度响应可用 `include_source=true,max_chars=...` 附带下一源首段，沿其 `next_offset` 补读。
 
+编排代码可显式使用 `SourcePageCache` 保存自己收到的精确源页；这是调用方辅助库，不是自动跨轮记忆，也不使服务端默认省略原文。上下文压缩、读者交接或缓存不可访问时清空/正常重读。应纠正“连续两次获取仍持有的相同源页”；应保留“独立审查者首次读取、换版本或缺页时补读”。不要缓存采纳权限、context_id 或 book_status 来替代当前校验。
+
 审查通过 `source_save` 保存，示意 payload（ID/哈希用实际响应替换）：
 
 ```json

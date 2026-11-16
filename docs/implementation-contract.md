@@ -43,6 +43,24 @@ jobs/batches tables are reused; older runtimes cannot resume this new job kind.
 Single-chapter APIs remain available. See the [batch workflow](../skills/novel/references/batch-revision.md)
 and [measured optimization results](optimization-verification.md).
 
+Since 0.1.7, candidate graphs are restored into a separate in-memory
+SQLite connection from a disposable revision_snapshots table, created only on
+candidate apply/context. Cache bindings cover the book/job, baseline, cursor,
+manifest and prefix source/delta bytes. Blob checksum/format failures rebuild
+from authoritative inputs. Snapshot, batch and cursor persistence share one
+transaction; commit/abort removes the snapshot. Final commit never trusts it
+instead of replaying evidence. No snapshot is exposed to canon/POV queries.
+
+Public schemas omit only annotation titles; property names, literal data and
+all constraints remain. MCP text defaults to the full JSON envelope. The explicit
+NOVEL_WEAVER_MCP_TEXT_MODE=summary mode omits data from the text copy only:
+structuredContent is complete, including prose and evidence. Status, revision,
+errors, warnings and next_actions remain in both channels. Clients relying on
+text alone must keep full mode. CLI output and request schemas are unchanged.
+SourcePageCache is an optional caller-owned bounded cache, not an automatic
+server cache or implicit proof that an agent retains the manuscript. See
+[snapshot and transport validation](snapshot-transport-verification.md).
+
 CLI JSON stdout is a single envelope; stderr contains diagnostics. Hooks are
 read-only and output official hook JSON instead of a CLI envelope. Hook run
 reads stdin event JSON, discovers the closest .novel/project.json from cwd,

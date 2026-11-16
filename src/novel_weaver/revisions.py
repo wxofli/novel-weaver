@@ -1,8 +1,8 @@
 """Resumable candidate replay with one atomic canon/graph commit.
 
-Uses the existing jobs/batches tables; no migration or external book writes.
-During staging the authoritative graph is rebuilt only inside a rolled-back
-savepoint. Each delta is validated against the new, ordered prefix.
+Uses jobs/batches plus disposable, lazily created candidate snapshots.
+Each delta is validated against an isolated ordered prefix; final commit always
+replays authoritative deltas. Cache misses rebuild inside a rolled-back savepoint.
 """
 import json
 import time
@@ -11,6 +11,7 @@ from .errors import NovelError, require
 from .memory import apply_delta
 from .schemas import MemoryDelta
 from .store import dumps, uid
+from . import candidate_snapshot
 
 
 def _check_revisions(book, revisions):
@@ -84,6 +85,7 @@ def execute_batch(book, request):
             "REVISION_JOB_NOT_ACTIVE", "No matching active revision batch", 4)
     manifest = json.loads(job["manifest"])
     if request.mode == "abort":
+        candidate_snapshot.discard(book, job["id"])
         book.db.execute("UPDATE jobs SET status='cancelled' WHERE id=?", (job["id"],))
         return {"job_id": job["id"], "aborted": True, "canon_unchanged": True}
     require(book.revision == manifest["revision"] and book.fingerprint() == manifest["fingerprint"],
@@ -93,11 +95,9 @@ def execute_batch(book, request):
         return progress(book, job, manifest, include_source=request.include_source, max_chars=request.max_chars)
     if request.mode == "context":
         from .memory import fact_rows
-        book.db.execute("SAVEPOINT revision_context")
-        try:
-            _replay(book, manifest, manifest["batches"])
+        with candidate_snapshot.candidate(book, job, manifest) as graph:
             chapter = manifest["first_chapter"] + job["position"] - 1
-            rows = fact_rows(book, chapter, seeds=set(request.entity_ids) if request.entity_ids else None)
+            rows = fact_rows(graph, chapter, seeds=set(request.entity_ids) if request.entity_ids else None)
             rows.sort(key=lambda row: (-row["introduced"], row["id"]))
             data = {"job_id": job["id"], "view": "candidate_author_memory", "as_of_chapter": chapter,
                     "canon_unchanged": True, "facts": [], "truncated": False}
@@ -111,27 +111,24 @@ def execute_batch(book, request):
                     data["facts"].pop()
                     break
             data["truncated"] = len(data["facts"]) < len(rows)
-            return data
-        finally:
-            book.db.execute("ROLLBACK TO revision_context")
-            book.db.execute("RELEASE revision_context")
+            payload = None if graph.restored else candidate_snapshot.capture(graph)
+        if payload is not None:
+            candidate_snapshot.save(book, job, manifest, payload)
+        return data
     if request.mode == "apply":
         require(job["position"] < len(manifest["sources"])
                 and request.source_version == manifest["sources"][job["position"]],
                 "SYNC_ORDER", "Stage only the next exact revision source", 4)
-        book.db.execute("SAVEPOINT revision_validation")
-        try:
-            _replay(book, manifest, manifest["batches"])
-            apply_delta(book, book.source(request.source_version), request.delta)
-        finally:
-            book.db.execute("ROLLBACK TO revision_validation")
-            book.db.execute("RELEASE revision_validation")
+        with candidate_snapshot.candidate(book, job, manifest) as graph:
+            apply_delta(graph, book.source(request.source_version), request.delta)
+            payload = candidate_snapshot.capture(graph)
         batch_id = uid("batch")
         book.db.execute("INSERT INTO batches VALUES (?,?,?,?,0)",
                         (batch_id, request.source_version, book.revision, request.delta.model_dump_json()))
         manifest["batches"].append(batch_id)
         job["position"] += 1
         book.db.execute("UPDATE jobs SET manifest=?,position=? WHERE id=?", (dumps(manifest), job["position"], job["id"]))
+        candidate_snapshot.save(book, job, manifest, payload)
         return dict(progress(book, job, manifest, include_source=request.include_source, max_chars=request.max_chars), batch_id=batch_id)
 
     require(request.expected_revision == book.revision, "REVISION_CONFLICT", "Book revision changed", 4)
@@ -153,6 +150,7 @@ def execute_batch(book, request):
         book.queue_projection(source)
     book.set_meta("frontier", book.source(manifest["sources"][-1])["chapter"])
     book.db.execute("UPDATE jobs SET status='complete' WHERE id=?", (job["id"],))
+    candidate_snapshot.discard(book, job["id"])
     book.bump()
     return {"job_id": job["id"], "accepted": True, "chapters_revised": len(manifest["revisions"]),
             "chapters_replayed": len(manifest["sources"]), "memory_frontier": book.frontier()}

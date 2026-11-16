@@ -1,7 +1,7 @@
 """Official MCP SDK adapter; book tools use the same models and core as CLI."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 from typing import Annotated
 
@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from .schemas import ACTION_MODELS, ResponseEnvelope
 from .errors import NovelError, error_envelope, validation_error
+from .transport import compact_schema, tool_result
 
 
 DESCRIPTIONS = {
@@ -57,17 +58,13 @@ def _server_class():
             raise RuntimeError("The official MCP SDK is unavailable. Install project dependencies with: python -m pip install -e . (the project requires mcp==2.3.0).") from v2_error
 
 
-def _handler(action: str, request_model: type[BaseModel]):
+def _handler(action: str, request_model: type[BaseModel], text_mode="full"):
     """Create one signature per tool without leaking closure/default parameters."""
-    from mcp.types import CallToolResult, TextContent
+    from mcp.types import CallToolResult
 
     def call(request):
         result = execute(action, request.model_dump(mode="json"))
-        return CallToolResult(
-            content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
-            structuredContent=result,
-            isError=result.get("status") == "error",
-        )
+        return tool_result(result, text_mode)
 
     call.__name__ = action
     call.__doc__ = DESCRIPTIONS.get(action, action.replace("_", " "))
@@ -75,11 +72,25 @@ def _handler(action: str, request_model: type[BaseModel]):
     return call
 
 
-def build_server():
+def build_server(*, text_mode=None):
+    text_mode = text_mode or os.environ.get("NOVEL_WEAVER_MCP_TEXT_MODE", "full")
+    if text_mode not in {"full", "summary"}:
+        raise ValueError("NOVEL_WEAVER_MCP_TEXT_MODE must be full or summary")
     base_class = _server_class()
-    from mcp.types import CallToolResult, TextContent, ToolAnnotations
+    from mcp.types import ToolAnnotations
 
     class EnvelopeServer(base_class):
+        async def list_tools(self):
+            result = []
+            for tool in await super().list_tools():
+                # Copy the public descriptor; the SDK's validation models stay intact.
+                input_name = "input_schema" if hasattr(tool, "input_schema") else "inputSchema"
+                output_name = "output_schema" if hasattr(tool, "output_schema") else "outputSchema"
+                fields = {input_name: compact_schema(getattr(tool, input_name)),
+                          output_name: compact_schema(getattr(tool, output_name))}
+                result.append(tool.model_copy(update=fields))
+            return result
+
         async def call_tool(self, name, arguments, context=None):
             error = None
             if name in ACTION_MODELS and (not isinstance(arguments, dict) or set(arguments) != {"request"}):
@@ -96,8 +107,7 @@ def build_server():
                 except ValidationError as exc:
                     error = validation_error(exc)
             result = error_envelope(error)
-            return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
-                                  structuredContent=result, isError=True)
+            return tool_result(result, text_mode)
 
     server = EnvelopeServer(
         "Novel Weaver",
@@ -115,7 +125,7 @@ def build_server():
             description=DESCRIPTIONS.get(action),
             annotations=annotations,
             structured_output=True,
-        )(_handler(action, model))
+        )(_handler(action, model, text_mode))
     return server
 
 

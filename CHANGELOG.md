@@ -2,7 +2,28 @@
 
 ## Unreleased
 
-Changes after the 0.1.6 preview will be recorded here.
+Changes after the 0.1.7 preview will be recorded here.
+
+## 0.1.7 — Candidate snapshots and compact tool transport
+
+- Remove automatic schema title annotations while preserving actual fields, literals and validation constraints.
+- Persist disposable candidate-prefix snapshots with atomic cursor updates, corruption recovery and complete final evidence replay.
+- Add an opt-in MCP summary text mode; keep complete structured results and retain full-text compatibility by default.
+- Add an explicit bounded source-page cache for callers, snapshot/transport benchmarks and isolation/recovery tests. No installed plugin or book is updated automatically.
+
+### 验证与收益
+
+- 本地完整回归 168 项通过；另验证新进程直接恢复快照而无需重放。10 个 skill 校验、文档引用和插件打包检查通过。
+- MCP 工具声明由 55,503 降至 44,949 字符（减少 19.02%），保留字段和全部校验条件。
+- 75 章、1,500 条事实的合成对照中，工具调用同为 216 次；增量应用 5,700 → 150 次，SQL 426,969 → 73,753 条，本地单次耗时 23.621 → 13.557 秒，最终五张记忆图表和正文哈希一致。轻负载不保证加速。
+- 对 5,991 个历史结果模拟精简返回，序列化字符减少 46.62%；有界缓存模拟可减少 239 次读取。以上不是实际模型 token 或费用降幅。完整口径见[验证报告](https://github.com/wxofli/novel-weaver/blob/v0.1.7/docs/snapshot-transport-verification.md)。
+
+### 兼容与升级
+
+- 精简返回默认关闭。只有确认客户端消费完整 structuredContent 后，才显式配置 NOVEL_WEAVER_MCP_TEXT_MODE=summary；仅使用 text 的客户端继续使用默认 full。CLI 返回不变。
+- 候选快照是按需创建的 revision_snapshots 派生表；与游标、增量同事务保存，失效可重建，提交和中止后清理。最终采纳仍完整重放，并保留版本、审查、证据与事务校验。
+- 分页缓存仅供调用方显式使用，独立审查、版本变化、缺页或上下文丢失时仍须读取原文。活动 revision_batch 任务完成或中止前，不切换旧运行时。
+- 发布不自动安装或更新已有插件，不改写任何小说项目；现有创作会话可继续使用原版本。
 
 ## 0.1.6 — Atomic batch revisions and leaner tool workflows
 

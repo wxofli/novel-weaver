@@ -51,3 +51,34 @@ def test_synthetic_trace_pattern_preserves_results_with_fewer_calls(tmp_path):
     assert result["batch_extraction_passes"] == 4
     assert result["semantic_graph_and_canon_equal"]
     assert result["batch"]["tool_calls"] < result["sequential"]["tool_calls"]
+
+
+def test_snapshot_benchmark_preserves_all_graph_tables_with_less_replay(tmp_path):
+    spec = importlib.util.spec_from_file_location("snapshot_benchmark", Path(__file__).resolve().parents[1] / "scripts/benchmark_revisions.py")
+    benchmark = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(benchmark)
+    result = benchmark.compare(tmp_path, chapters=4, order=[3, 1], snapshot_compare=True, include_context=True, facts_per_chapter=3)
+    assert result["semantic_graph_and_canon_equal"]
+    assert result["batch_snapshot"]["delta_applications"] == 8
+    assert result["batch_replay"]["delta_applications"] == 20
+    assert result["batch_snapshot"]["tool_calls"] == result["batch_replay"]["tool_calls"]
+
+
+def test_transport_counterfactual_cache_respects_compaction(tmp_path):
+    spec = importlib.util.spec_from_file_location("transport_benchmark", Path(__file__).resolve().parents[1] / "scripts/benchmark_transport.py")
+    benchmark = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(benchmark)
+    rows = []
+    for n in range(3):
+        if n == 2: rows.append({"type": "compacted", "timestamp": "2026-11-16T00:00:02Z", "payload": {}})
+        value = {"schema_version": 1, "status": "ok", "book_id": "b", "revision": 1, "error": None, "warnings": [], "next_actions": [],
+                 "data": {"source_version": "s", "source_hash": "h", "content": "PRIVATE-TEXT", "offset": 0, "total_chars": 12, "next_offset": None}}
+        rows.append({"type": "event_msg", "timestamp": f"2026-11-16T00:00:0{n}Z", "payload": {"thread_id": "t", "type": "item_completed", "item": {
+            "type": "McpToolCall", "id": str(n), "server": "novel_weaver", "tool": "source_get", "arguments": {"request": {"project": "p", "book_id": "b", "source_version": "s"}},
+            "result": {"structuredContent": value}}}})
+    p = tmp_path / "trace.jsonl"
+    p.write_text("\n".join(map(json.dumps, rows)), encoding="utf-8")
+    result = benchmark.analyze([("t", p)], None)
+    assert result["trace_counterfactual"]["cache_rpc_hits"] == 1
+    assert result["trace_counterfactual"]["compaction_clears"] == 1
+    assert "PRIVATE-TEXT" not in json.dumps(result)

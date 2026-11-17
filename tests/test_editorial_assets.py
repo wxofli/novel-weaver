@@ -75,7 +75,9 @@ def test_packaged_editorial_dependency_graph_is_complete(tmp_path):
             f"{skill_root}/novel/references/craft-examples.md",
             "docs/editorial-verification.md",
             "docs/editorial-backend-roadmap.md",
+            "docs/editorial-agents-init.md",
         }
         assert required <= visited
+        assert "src/novel_weaver/store.py" in names
         # Developer instructions must not be installed as book-level instructions.
         assert "AGENTS.md" not in names

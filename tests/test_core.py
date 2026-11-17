@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from novel_weaver.service import execute
-from novel_weaver.store import Book, digest
+from novel_weaver.store import BOOK_INSTRUCTIONS, Book, digest
 
 
 def call(action, book=None, **kwargs):
@@ -85,6 +85,22 @@ def test_book_init_adds_narration_rule_to_project_instructions(tmp_path):
     assert "Write narrative prose in third person" in generated
     assert "only when the author explicitly requests it" in generated
     assert "first person in dialogue" in generated
+    assert generated == author_rules + BOOK_INSTRUCTIONS
+
+
+def test_book_init_does_not_migrate_existing_instructions(tmp_path):
+    payload = {"project": str(tmp_path), "title": "旧书", "operation_id": "init-existing"}
+    original = ok(call("book_init", **payload))
+    instructions = tmp_path / "AGENTS.md"
+    author_version = "# 旧版作品约定\n保留作者自定规则。\n"
+    instructions.write_text(author_version, encoding="utf-8")
+    assert ok(call("book_init", **payload)) == original
+    assert instructions.read_text(encoding="utf-8") == author_version
+
+
+def test_book_init_creates_instructions_without_existing_file(tmp_path):
+    ok(call("book_init", project=str(tmp_path / "新书"), title="新书"))
+    assert (tmp_path / "新书" / "AGENTS.md").read_text(encoding="utf-8") == BOOK_INSTRUCTIONS
 
 
 def test_isolation_and_knowledge(book, tmp_path):

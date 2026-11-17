@@ -14,7 +14,7 @@ requires-python = ">=3.11"
 dependencies = ["pydantic==2.12.3", "mcp==2.3.0", "jieba==0.42.1", "httpx==0.28.1", "setuptools==80.9.0"]
 
 [project.optional-dependencies]
-vector = ["sqlite-vec==0.1.6"]
+vector = ["sqlite-vec==0.1.9"]
 dev = ["pytest>=9,<10", "pytest-asyncio>=1,<2"]
 
 [project.urls]
